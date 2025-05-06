@@ -267,7 +267,10 @@ if __name__ == "__main__":
 
     # %%
     # callbacks
-    save_top_models_callback = SaveTopModelsCallback(top_n=1)
+    save_top_models_callback = SaveTopModelsCallback(
+        top_n=1,
+        logger=logger,
+    )
     early_stopping_callback = EarlyStoppingCallback(early_stopping_patience=3)
     callbacks = [
         save_top_models_callback,

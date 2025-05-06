@@ -1,6 +1,8 @@
 # %%
 import os
 import shutil
+from typing import Optional
+from logging import Logger
 from textwrap import dedent
 
 import numpy
@@ -19,6 +21,7 @@ class SaveTopModelsCallback(TrainerCallback):
     def __init__(
             self,
             top_n: int=3,
+            logger: Optional[Logger]=None
         ):
         """
         Args:
@@ -31,6 +34,10 @@ class SaveTopModelsCallback(TrainerCallback):
         """
         # Check the types of the arguments
         self.top_n: int = top_n
+        if logger is not None:
+            self.report_to = logger.info
+        else:
+            self.report_to = print
 
         # Check the values of the arguments
         if not isinstance(self.top_n, int):
@@ -84,7 +91,7 @@ class SaveTopModelsCallback(TrainerCallback):
         if getattr(self, "save_dir", None) is None:
             return
         monitor = args.metric_for_best_model
-        print(kwargs["metrics"])
+        self.report_to(kwargs["metrics"])
         # Get the latest evaluation metric
         metric = kwargs["metrics"]["eval_" + monitor] # The evaluation metric
 
@@ -100,7 +107,7 @@ class SaveTopModelsCallback(TrainerCallback):
         is_model_better = operator(metric, worst_metric)
 
         # logging the evaluation
-        print(dedent(f"""\
+        self.report_to(dedent(f"""\
             epoch {state.epoch} evaluation {monitor}
             Current model: {model_path}
             Worst saved model: {worst_model}
