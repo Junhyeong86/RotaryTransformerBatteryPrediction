@@ -5,13 +5,13 @@ from argparse import ArgumentParser
 if __name__ == "__main__":
     parser = ArgumentParser(description="Train a model for SOH prediction.")
     parser.add_argument(
-        "time_transformer_num_layers",
+        "--time_transformer_num_layers",
         type=int,
         help="Number of layers in the time-level transformer.",
         required=True,
     )
     parser.add_argument(
-        "cycle_transformer_num_layers",
+        "--cycle_transformer_num_layers",
         type=int,
         help="Number of layers in the cycle-level transformer.",
         required=True,
@@ -57,14 +57,13 @@ if __name__ == "__main__":
     time_transformer_output_dim = 4
     dropout = 0.0
     freq_base = 10_000.0
-    rotary_embedding_dtype = torch.float32
+    rotary_embedding_dtype = "float32"
     max_sequence_len = 1024
     ## parameters for training
     batch_size = 32
     num_training_steps = 20_000
     warmup_steps = 1_000
     weight_decay = 0.01
-
     # %%
     # output directory
     output_dir = os.path.join(
@@ -131,8 +130,13 @@ if __name__ == "__main__":
     from rotary_transformer_battery_prediction.compute_metrics import compute_metrics
 
     # %%
+    # check if output directory exists
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    # %%
     # logging
-    logger = logging.get_logger(__name__)
+    logger = logging.get_logger()
     logger.setLevel(logging.INFO)
 
     formatter = Formatter("%(levelname)s %(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
@@ -166,6 +170,7 @@ if __name__ == "__main__":
         "voltage_per_time": Array2D(shape=(None, random_time_len), dtype="float32"),
         "current_per_time": Array2D(shape=(None, random_time_len), dtype="float32"),
     })
+    ds = ds.cast(features)
 
     # %%
     # split cycle
@@ -181,6 +186,15 @@ if __name__ == "__main__":
         },
         desc="Split cycle",
     )
+    features = Features({
+        "cycle_idx": Sequence(Value(dtype="int32")),
+        "discharge_capacity_per_cycle": Sequence(Value(dtype="float32")),
+        "time": Array2D(shape=(split_cycle_len, random_time_len), dtype="float32"),
+        "voltage_per_time": Array2D(shape=(split_cycle_len, random_time_len), dtype="float32"),
+        "current_per_time": Array2D(shape=(split_cycle_len, random_time_len), dtype="float32"),
+        "mask": Sequence(Value(dtype="bool")),
+        "label_discharge_capacity_per_cycle": Sequence(Value(dtype="float32")),
+    })
 
     # %%
     # rename columns for dataset input
@@ -216,7 +230,7 @@ if __name__ == "__main__":
         cycle_transformer_num_layers=cycle_transformer_num_layers,
         dropout=dropout,
         freq_base=freq_base,
-        rotary_embedding_dtype=rotary_embedding_dtype,
+        rotary_embedding_dtype="float32",
         max_sequence_len=max_sequence_len
     )
     model = RotaryTransformerBatteryPredictionPreTrainedModel(
@@ -280,6 +294,7 @@ if __name__ == "__main__":
 
     # %%
     start_time = time.time()
+    logger.info("Training started.")
     trainer.train()
     end_time = time.time()
     training_time = timedelta(seconds=end_time - start_time)

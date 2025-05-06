@@ -30,11 +30,11 @@ def compute_metrics(eval_preds):
     state_of_health_mse = F.mse_loss(
         torch.FloatTensor(state_of_health),
         torch.FloatTensor(label_state_of_health),
-    )
+    ) * 100 # to percentage loss of state of health
     state_of_health_mae = F.l1_loss(
         torch.FloatTensor(state_of_health),
         torch.FloatTensor(label_state_of_health),
-    )
+    ) * 100 # to percentage loss of state of health
 
     return {
         "discharge_capacity_mse": discharge_capacity_mse.item(),

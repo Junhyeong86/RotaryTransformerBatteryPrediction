@@ -22,8 +22,9 @@ profile_default/
 ipython_config.py
 
 # hidden files
-_*
+/_*
 
 # log checkpoints
+*.log
 log/**/*
 *.tar

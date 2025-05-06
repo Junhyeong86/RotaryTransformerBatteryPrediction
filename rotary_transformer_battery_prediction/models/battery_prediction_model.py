@@ -101,7 +101,7 @@ class RotaryTransformerBatteryPrediction(nn.Module):
             cycle_transformer_num_layers: int=4,
             dropout: float=0.0,
             freq_base: float=10000.0,
-            rotary_embedding_dtype: Optional[torch.dtype] = None,
+            rotary_embedding_dtype: Optional[str] = None,
             max_sequence_len: int=1024,
         ):
         """
@@ -124,7 +124,7 @@ class RotaryTransformerBatteryPrediction(nn.Module):
                 - dropout rate
             freq_base: float
                 - frequency base
-            rotary_embedding_dtype: Optional[torch.dtype]
+            rotary_embedding_dtype: Optional[str]
                 - rotary embedding dtype
             max_sequence_len: int
                 - max sequence length
@@ -143,7 +143,7 @@ class RotaryTransformerBatteryPrediction(nn.Module):
         self.dropout = dropout
         self.freq_base = freq_base
         self.rotary_embedding_dtype = (
-            rotary_embedding_dtype
+            getattr(torch, rotary_embedding_dtype)
             if rotary_embedding_dtype is not None
             else torch.float32
         )
@@ -278,7 +278,7 @@ class RotaryTransformerBatteryPrediction(nn.Module):
             loss = F.mse_loss(
                 ret_state_of_health,
                 label_state_of_health
-            )
+            ) * 100 # to percentage loss of state of health
 
         ret = BatteryPredictionOutput(
             loss=loss,
