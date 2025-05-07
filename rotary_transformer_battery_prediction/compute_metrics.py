@@ -5,14 +5,8 @@ import torch
 import torch.nn.functional as F
 
 def compute_metrics(eval_preds):
-    (
-        logits,
-        discharge_capacity,
-        state_of_health,
-        multi_time_attn_weights,
-        time_level_rotary_attn_weights,
-        cycle_level_rotary_attn_weights,
-    ) = eval_preds.predictions
+    discharge_capacity = eval_preds.predictions[1]
+    state_of_health = eval_preds.predictions[2]
 
     label_discharge_capacity = eval_preds.label_ids
     label_discharge_capacity = numpy.array(label_discharge_capacity)

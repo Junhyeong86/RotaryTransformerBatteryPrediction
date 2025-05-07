@@ -353,11 +353,7 @@ class RoBaTConfig(PretrainedConfig):
         self.cycle_transformer_num_layers = cycle_transformer_num_layers
         self.dropout = dropout
         self.freq_base = freq_base
-        self.rotary_embedding_dtype = (
-            getattr(torch, rotary_embedding_dtype)
-            if rotary_embedding_dtype is not None
-            else torch.float32
-        )
+        self.rotary_embedding_dtype = rotary_embedding_dtype if rotary_embedding_dtype is not None else "float32"
         self.max_sequence_len = max_sequence_len
         self.output_attentions = output_attentions
 
@@ -391,7 +387,7 @@ class RoBaTPreTrainedModel(PreTrainedModel):
                 dropout=config.dropout,
                 max_sequence_len=config.ref_time_seq_len,
                 freq_base=config.freq_base,
-                rotary_embedding_dtype=config.rotary_embedding_dtype,
+                rotary_embedding_dtype=getattr(torch, config.rotary_embedding_dtype)
             ))
         self.time_norm = nn.RMSNorm(config.embedding_dim)
         self.time_fc = nn.Linear(config.embedding_dim, config.time_transformer_output_dim)
@@ -406,7 +402,7 @@ class RoBaTPreTrainedModel(PreTrainedModel):
                 dropout=config.dropout,
                 max_sequence_len=config.max_sequence_len,
                 freq_base=config.freq_base,
-                rotary_embedding_dtype=config.rotary_embedding_dtype,
+                rotary_embedding_dtype=getattr(torch, config.rotary_embedding_dtype),
             ))
         self.cycle_norm = nn.RMSNorm(config.embedding_dim)
 
