@@ -149,10 +149,12 @@ def split_cycle(
 
         time_len = len(cycle_t[0])
         chunks_idx = numpy.array_split(
-            range(len(cycle_i)-1),
+            range(len(cycle_idx)-1),
             numpy.arange(split_cycle_len, len(cycle_i), split_cycle_len),
         )
         for chunk_idx in chunks_idx:
+            if len(chunk_idx) == 0:
+                continue
             chunk_mask = numpy.zeros(
                 (split_cycle_len, ),
                 dtype=numpy.bool
@@ -168,6 +170,16 @@ def split_cycle(
                 dtype=numpy.float32,
             )
             chunk_label_dq = numpy.full(
+                (split_cycle_len, ),
+                fill_value=padding_value,
+                dtype=numpy.float32,
+            )
+            chunk_cycle_soh = numpy.full(
+                (split_cycle_len, ),
+                fill_value=padding_value,
+                dtype=numpy.float32,
+            )
+            chunk_label_soh = numpy.full(
                 (split_cycle_len, ),
                 fill_value=padding_value,
                 dtype=numpy.float32,
@@ -194,6 +206,8 @@ def split_cycle(
                 chunk_cycle_idx[padding_len:] = cycle_idx[chunk_idx]
                 chunk_cycle_dq[padding_len:] = cycle_dq[chunk_idx]
                 chunk_label_dq[padding_len:] = cycle_dq[chunk_idx + 1] # next cycle from previous cycles
+                chunk_cycle_soh[padding_len:] = cycle_dq[chunk_idx] / cycle_dq[chunk_idx[0]]
+                chunk_label_soh[padding_len:] = cycle_dq[chunk_idx + 1] / cycle_dq[chunk_idx[0]] # next cycle from previous cycles
                 chunk_t[padding_len:] = cycle_t[chunk_idx]
                 chunk_v[padding_len:] = cycle_v[chunk_idx]
                 chunk_i[padding_len:] = cycle_i[chunk_idx]
@@ -202,6 +216,8 @@ def split_cycle(
                 chunk_cycle_idx[:len(chunk_idx)] = cycle_idx[chunk_idx]
                 chunk_cycle_dq[:len(chunk_idx)] = cycle_dq[chunk_idx]
                 chunk_label_dq[:len(chunk_idx)] = cycle_dq[chunk_idx + 1] # next cycle from previous cycles
+                chunk_cycle_soh[:len(chunk_idx)] = cycle_dq[chunk_idx] / cycle_dq[chunk_idx[0]]
+                chunk_label_soh[:len(chunk_idx)] = cycle_dq[chunk_idx + 1] / cycle_dq[chunk_idx[0]] # next cycle from previous cycles
                 chunk_t[:len(chunk_idx)] = cycle_t[chunk_idx]
                 chunk_v[:len(chunk_idx)] = cycle_v[chunk_idx]
                 chunk_i[:len(chunk_idx)] = cycle_i[chunk_idx]
@@ -210,8 +226,11 @@ def split_cycle(
 
             ret["mask"].append(chunk_mask)
             ret["cycle_idx"].append(chunk_cycle_idx)
+            ret["first_discharge_capacity"].append(cycle_dq[chunk_idx[0]])
             ret["discharge_capacity_per_cycle"].append(chunk_cycle_dq)
+            ret["state_of_health_per_cycle"].append(chunk_cycle_soh)
             ret["label_discharge_capacity_per_cycle"].append(chunk_label_dq)
+            ret["label_state_of_health_per_cycle"].append(chunk_label_soh)
             ret["time"].append(chunk_t)
             ret["voltage_per_time"].append(chunk_v)
             ret["current_per_time"].append(chunk_i)
@@ -221,6 +240,12 @@ def split_cycle(
 def collate_fn(batch):
     discharge_capacity = torch.FloatTensor([
         item["discharge_capacity"] for item in batch
+    ])
+    first_discharge_capacity = torch.FloatTensor([
+        item["first_discharge_capacity"] for item in batch
+    ])
+    state_of_health = torch.FloatTensor([
+        item["state_of_health"] for item in batch
     ])
     time = torch.FloatTensor([
         item["time"] for item in batch
@@ -240,14 +265,21 @@ def collate_fn(batch):
         label_discharge_capacity = torch.FloatTensor([
             item["label_discharge_capacity"] for item in batch
         ])
+    if "label_state_of_health" in batch[0]:
+        label_state_of_health = torch.FloatTensor([
+            item["label_state_of_health"] for item in batch
+        ])
 
     ret = {
         "discharge_capacity": discharge_capacity,
+        "first_discharge_capacity": first_discharge_capacity,
+        "state_of_health": state_of_health,
         "time": time,
         "voltage_per_time": voltage_per_time,
         "current_per_time": current_per_time,
         "mask": mask,
         "label_discharge_capacity": label_discharge_capacity,
+        "label_state_of_health": label_state_of_health,
     }
     return ret
 

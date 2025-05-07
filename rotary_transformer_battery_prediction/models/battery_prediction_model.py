@@ -1,6 +1,8 @@
 # %%
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import Optional, List, Literal
+
+import numpy
 
 import torch
 import torch.nn as nn
@@ -91,10 +93,12 @@ class RoBaTConfig(PretrainedConfig):
             cycle_transformer_num_layers: int=4,
             dropout: float=0.0,
             freq_base: float=10000.0,
+            loss_column: Literal["discharge_capacity", "state_of_health"] = "state_of_health",
             rotary_embedding_dtype: Optional[str]=None,
             max_sequence_len: int=1024,
             initializer_range: float=0.02,
             output_attentions: bool=False,
+            padding_idx: int=-100,
         ):
         super().__init__()
         self.embedding_dim = embedding_dim
@@ -106,10 +110,12 @@ class RoBaTConfig(PretrainedConfig):
         self.cycle_transformer_num_layers = cycle_transformer_num_layers
         self.dropout = dropout
         self.freq_base = freq_base
+        self.loss_column = loss_column
         self.rotary_embedding_dtype = rotary_embedding_dtype if rotary_embedding_dtype is not None else "float32"
         self.max_sequence_len = max_sequence_len
         self.initializer_range = initializer_range
         self.output_attentions = output_attentions
+        self.padding_idx = padding_idx
 
 # %%
 class RoBaTPreTrainedModel(PreTrainedModel):
@@ -159,7 +165,7 @@ class RoBaTPreTrainedModel(PreTrainedModel):
                 freq_base=config.freq_base,
                 rotary_embedding_dtype=getattr(torch, config.rotary_embedding_dtype),
             ))
-        self.cycle_norm = nn.LayerNorm(config.embedding_dim)
+        self.cycle_norm = nn.RMSNorm(config.embedding_dim)
 
         self.output_fc = nn.Linear(config.embedding_dim, 1)
         self.post_init()
@@ -167,11 +173,14 @@ class RoBaTPreTrainedModel(PreTrainedModel):
     def forward(
             self,
             discharge_capacity: torch.Tensor,
+            first_discharge_capacity: torch.Tensor,
+            state_of_health: torch.Tensor,
             time: torch.Tensor,
             voltage_per_time: torch.Tensor,
             current_per_time: torch.Tensor,
             mask: Optional[torch.Tensor]=None,
             label_discharge_capacity: Optional[torch.Tensor]=None,
+            label_state_of_health: Optional[torch.Tensor]=None,
             output_attentions: Optional[bool]=None,
         ) -> RoBaTOutput:
         """
@@ -179,6 +188,12 @@ class RoBaTPreTrainedModel(PreTrainedModel):
         Args:
             discharge_capacity: torch.Tensor
                 - discharge capacity of the battery
+                - shape: (batch_size, cycle_len)
+            first_discharge_capacity: torch.Tensor
+                - first discharge capacity of the battery
+                - shape: (batch_size, cycle_len)
+            state_of_health: torch.Tensor
+                - state of health of the battery
                 - shape: (batch_size, cycle_len)
             time: torch.Tensor
                 - charge time of the battery
@@ -191,8 +206,13 @@ class RoBaTPreTrainedModel(PreTrainedModel):
                 - shape: (batch_size, cycle_len, time_len)
             mask: Optional[torch.Tensor]
                 - mask for the input data
+                - shape: (batch_size, cycle_len)
             label_discharge_capacity: Optional[torch.Tensor]
                 - label discharge capacity for loss calculation
+                - shape: (batch_size, cycle_len)
+            label_state_of_health: Optional[torch.Tensor]
+                - label state of health for loss calculation
+                - shape: (batch_size, cycle_len)
             output_attentions: Optional[bool]
                 - whether to output attention weights
         Returns:
@@ -216,14 +236,16 @@ class RoBaTPreTrainedModel(PreTrainedModel):
         batch_size, cycle_len = discharge_capacity.shape
         _, _, time_len = time.shape
         # shape_mismatch(discharge_capacity, (batch_size, cycle_len))
+        # shape_mismatch(first_discharge_capacity, (batch_size, cycle_len))
+        # shape_mismatch(state_of_health, (batch_size, cycle_len))
         # shape_mismatch(time, (batch_size, cycle_len, time_len))
         # shape_mismatch(voltage_per_time, (batch_size, cycle_len, time_len))
         # shape_mismatch(current_per_time, (batch_size, cycle_len, time_len))
-        state_of_health = discharge_capacity / discharge_capacity[:, 0].unsqueeze(1)
+        # if label_discharge_capacity is not None:
+            # shape_mismatch(label_discharge_capacity, (batch_size, cycle_len))
+        # if label_state_of_health is not None:
+            # shape_mismatch(label_state_of_health, (batch_size, cycle_len))
         # (batch_size, cycle_len)
-
-        if mask is not None:
-            mask = mask.to(state_of_health.device)
 
         time_features_input = torch.stack([
             voltage_per_time,
@@ -281,14 +303,24 @@ class RoBaTPreTrainedModel(PreTrainedModel):
         ret_state_of_health = self.output_fc(x) # (batch_size, cycle_len, 1)
         ret_state_of_health = ret_state_of_health.squeeze(2) # (batch_size, cycle_len)
 
-        ret_discharge_capacity = ret_state_of_health * discharge_capacity[:, 0].unsqueeze(1) # (batch_size, cycle_len)
+        ret_discharge_capacity = ret_state_of_health * first_discharge_capacity.unsqueeze(1) # (batch_size, cycle_len)
+
+        ret_discharge_capacity = ret_discharge_capacity.masked_fill(mask, self.config.padding_idx)
+        ret_state_of_health = ret_state_of_health.masked_fill(mask, self.config.padding_idx)
 
         loss = None
-        if label_discharge_capacity is not None:
+        if label_discharge_capacity is not None and self.config.loss_column == "discharge_capacity":
             loss = F.mse_loss(
                 ret_discharge_capacity,
                 label_discharge_capacity,
-            ) * 1e3 # to mAh loss of discharge capacity
+                reduction="sum"
+            ) / (~mask).sum() * 1e6  # to mAh loss of discharge capacity
+        elif label_state_of_health is not None and self.config.loss_column == "state_of_health":
+            loss = F.mse_loss(
+                ret_state_of_health,
+                label_state_of_health,
+                reduction="sum"
+            ) / (~mask).sum() * 1e4 # to percentage loss of state of health
 
         return RoBaTOutput(
             loss=loss,
@@ -311,13 +343,14 @@ class RoBaTPreTrainedModel(PreTrainedModel):
                 - module to initialize
         """
         std = self.config.initializer_range
-        if isinstance(module, (nn.Linear, nn.Embedding)):
+        if isinstance(module, nn.Linear):
             module.weight.data.normal_(mean=0.0, std=std)
             if module.bias is not None:
                 module.bias.data.zero_()
-        elif isinstance(module, nn.LayerNorm):
-            module.bias.data.zero_()
-            module.weight.data.fill_(1.0)
+        elif isinstance(module, nn.Embedding):
+            module.weight.data.normal_(mean=0.0, std=std)
+            if module.padding_idx is not None:
+                module.weight.data[module.padding_idx].zero_()
         elif isinstance(module, nn.RMSNorm):
             module.weight.data.fill_(1.0)
 

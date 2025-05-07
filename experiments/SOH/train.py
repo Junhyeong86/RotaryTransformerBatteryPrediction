@@ -205,11 +205,14 @@ if __name__ == "__main__":
     ds = ds.rename_columns({
         "cycle_idx": "cycle_idx",
         "discharge_capacity_per_cycle": "discharge_capacity",
+        "first_discharge_capacity": "first_discharge_capacity",
+        "state_of_health_per_cycle": "state_of_health",
         "time": "time",
         "voltage_per_time": "voltage_per_time",
         "current_per_time": "current_per_time",
         "mask": "mask",
         "label_discharge_capacity_per_cycle": "label_discharge_capacity",
+        "label_state_of_health_per_cycle": "label_state_of_health",
     })
 
     # %%
@@ -234,6 +237,7 @@ if __name__ == "__main__":
         cycle_transformer_num_layers=cycle_transformer_num_layers,
         dropout=dropout,
         freq_base=freq_base,
+        loss_column="state_of_health",
         rotary_embedding_dtype="float32",
         max_sequence_len=max_sequence_len,
         output_attentions=output_attentions,
@@ -293,7 +297,7 @@ if __name__ == "__main__":
     )
     device = next(model.parameters()).device
     input_data = collate_fn([ds["train"][i] for i in range(batch_size)])
-    input_data = {k: v.to(device) for k, v in input_data.items()}
+    input_data = {k: v.to(device) for k, v in input_data.items() if "label" not in k}
     model_summarize = summary(model, input_data=input_data, verbose=0)
     logger.info("Model summary:")
     logger.info(str(model_summarize))
