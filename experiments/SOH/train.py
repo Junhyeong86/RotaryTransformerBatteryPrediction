@@ -1,8 +1,10 @@
+# %%
 import os
 import re
 from argparse import ArgumentParser
 
 if __name__ == "__main__":
+    # %%
     parser = ArgumentParser(description="Train a model for SOH prediction.")
     parser.add_argument(
         "--time_transformer_num_layers",
@@ -35,6 +37,7 @@ if __name__ == "__main__":
         help="Ignore the existence of the output directory.",
     )
 
+    # %%
     # parsing arguments
     args = parser.parse_args()
     time_transformer_num_layers = args.time_transformer_num_layers
