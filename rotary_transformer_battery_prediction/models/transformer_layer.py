@@ -128,3 +128,5 @@ class Transformer(nn.Module):
         x = x + _x
 
         return x, attn
+
+# %%

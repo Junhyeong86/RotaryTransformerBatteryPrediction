@@ -15,11 +15,11 @@ def compute_metrics(eval_preds):
     discharge_capacity_mse = F.mse_loss(
         torch.FloatTensor(discharge_capacity),
         torch.FloatTensor(label_discharge_capacity),
-    )
+    ) * 1e3 # to mAh loss of discharge capacity
     discharge_capacity_mae = F.l1_loss(
         torch.FloatTensor(discharge_capacity),
         torch.FloatTensor(label_discharge_capacity),
-    )
+    ) * 1e3 # to mAh loss of discharge capacity
 
     state_of_health_mse = F.mse_loss(
         torch.FloatTensor(state_of_health),
@@ -36,3 +36,5 @@ def compute_metrics(eval_preds):
         "state_of_health_mse": state_of_health_mse.item(),
         "state_of_health_mae": state_of_health_mae.item(),
     }
+
+# %%

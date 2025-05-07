@@ -24,8 +24,6 @@ class RoBaTOutput(ModelOutput):
     Attributes:
         loss: Optional[torch.FloatTensor]
             - loss of the model
-        logits: Optional[torch.FloatTensor]
-            - logits of the model
         discharge_capacity: Optional[torch.FloatTensor]
             - discharge capacity of the battery
         state_of_health: Optional[torch.FloatTensor]
@@ -41,7 +39,6 @@ class RoBaTOutput(ModelOutput):
             - length of the list is equal to the number of cycle-level transformer layers
     """
     loss: Optional[torch.FloatTensor] = None
-    logits: Optional[torch.FloatTensor] = None
     discharge_capacity: Optional[torch.FloatTensor] = None
     state_of_health: Optional[torch.FloatTensor] = None
     multi_time_attn_weights: Optional[List[torch.FloatTensor]] = None
@@ -76,6 +73,8 @@ class RoBaTConfig(PretrainedConfig):
             - rotary embedding dtype
         max_sequence_len: int
             - max sequence length
+        initializer_range: float
+            - initializer range
         output_attentions: bool
             - whether to output attention weights
     """
@@ -94,6 +93,7 @@ class RoBaTConfig(PretrainedConfig):
             freq_base: float=10000.0,
             rotary_embedding_dtype: Optional[str]=None,
             max_sequence_len: int=1024,
+            initializer_range: float=0.02,
             output_attentions: bool=False,
         ):
         super().__init__()
@@ -108,6 +108,7 @@ class RoBaTConfig(PretrainedConfig):
         self.freq_base = freq_base
         self.rotary_embedding_dtype = rotary_embedding_dtype if rotary_embedding_dtype is not None else "float32"
         self.max_sequence_len = max_sequence_len
+        self.initializer_range = initializer_range
         self.output_attentions = output_attentions
 
 # %%
@@ -158,7 +159,7 @@ class RoBaTPreTrainedModel(PreTrainedModel):
                 freq_base=config.freq_base,
                 rotary_embedding_dtype=getattr(torch, config.rotary_embedding_dtype),
             ))
-        self.cycle_norm = nn.RMSNorm(config.embedding_dim)
+        self.cycle_norm = nn.LayerNorm(config.embedding_dim)
 
         self.output_fc = nn.Linear(config.embedding_dim, 1)
         self.post_init()
@@ -277,28 +278,47 @@ class RoBaTPreTrainedModel(PreTrainedModel):
                 cycle_level_rotary_attn_weights.append(_cycle_level_rotary_attn_weights)
         x = self.cycle_norm(x)
 
-        logits = self.output_fc(x) # (batch_size, cycle_len, 1)
-        logits = logits.squeeze(2) # (batch_size, cycle_len)
+        ret_state_of_health = self.output_fc(x) # (batch_size, cycle_len, 1)
+        ret_state_of_health = ret_state_of_health.squeeze(2) # (batch_size, cycle_len)
 
-        ret_state_of_health = logits / logits[:, 0].unsqueeze(1) # (batch_size, cycle_len)
         ret_discharge_capacity = ret_state_of_health * discharge_capacity[:, 0].unsqueeze(1) # (batch_size, cycle_len)
 
         loss = None
         if label_discharge_capacity is not None:
-            label_state_of_health = label_discharge_capacity / label_discharge_capacity[:, 0].unsqueeze(1)
             loss = F.mse_loss(
-                ret_state_of_health,
-                label_state_of_health
-            ) * 100 # to percentage loss of state of health
+                ret_discharge_capacity,
+                label_discharge_capacity,
+            ) * 1e3 # to mAh loss of discharge capacity
 
         return RoBaTOutput(
             loss=loss,
-            logits=logits,
             discharge_capacity=ret_discharge_capacity,
             state_of_health=ret_state_of_health,
             multi_time_attn_weights=multi_time_attn_weights,
             time_level_rotary_attn_weights=time_level_rotary_attn_weights,
             cycle_level_rotary_attn_weights=cycle_level_rotary_attn_weights,
         )
+
+    def _init_weights(self, module):
+        """
+        Initialize the weights of the model.
+
+        Reference:
+            https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py
+
+        Args:
+            module: nn.Module
+                - module to initialize
+        """
+        std = self.config.initializer_range
+        if isinstance(module, (nn.Linear, nn.Embedding)):
+            module.weight.data.normal_(mean=0.0, std=std)
+            if module.bias is not None:
+                module.bias.data.zero_()
+        elif isinstance(module, nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+        elif isinstance(module, nn.RMSNorm):
+            module.weight.data.fill_(1.0)
 
 # %%

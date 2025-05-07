@@ -250,3 +250,5 @@ def collate_fn(batch):
         "label_discharge_capacity": label_discharge_capacity,
     }
     return ret
+
+# %%

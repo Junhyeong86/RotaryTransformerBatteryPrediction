@@ -49,3 +49,5 @@ class SwiGLUFeedForward(nn.Module):
         x = self.silu(x_fc1) * x_fc2 # (..., hidden_dim)
         x = self.fc3(x) # (..., input_dim)
         return x
+
+# %%

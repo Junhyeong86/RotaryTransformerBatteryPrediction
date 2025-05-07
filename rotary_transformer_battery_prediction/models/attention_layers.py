@@ -358,3 +358,5 @@ class MultiTimeAttention(nn.Module):
         # ret_attn: (batch_size, ref_seq_len, seq_len)
 
         return ret, ret_attn
+
+# %%
