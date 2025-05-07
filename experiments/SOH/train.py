@@ -59,6 +59,7 @@ if __name__ == "__main__":
     freq_base = 10_000.0
     rotary_embedding_dtype = "float32"
     max_sequence_len = 1024
+    output_attentions = False
     ## parameters for training
     batch_size = 32
     num_training_steps = 20_000
@@ -118,8 +119,8 @@ if __name__ == "__main__":
     from transformers.trainer_callback import EarlyStoppingCallback
 
     from rotary_transformer_battery_prediction.models import (
-        RotaryTransformerBatteryPredictionConfig,
-        RotaryTransformerBatteryPredictionPreTrainedModel
+        RoBaTConfig,
+        RoBaTPreTrainedModel,
     )
     from rotary_transformer_battery_prediction.utils.transformer_trainer_utils import SaveTopModelsCallback
     from rotary_transformer_battery_prediction.preprocess import (
@@ -220,7 +221,7 @@ if __name__ == "__main__":
 
     # %%
     # model
-    config = RotaryTransformerBatteryPredictionConfig(
+    config = RoBaTConfig(
         embedding_dim=embedding_dim,
         feed_forward_hidden_dim=feed_forward_hidden_dim,
         num_heads=num_heads,
@@ -231,11 +232,10 @@ if __name__ == "__main__":
         dropout=dropout,
         freq_base=freq_base,
         rotary_embedding_dtype="float32",
-        max_sequence_len=max_sequence_len
+        max_sequence_len=max_sequence_len,
+        output_attentions=output_attentions,
     )
-    model = RotaryTransformerBatteryPredictionPreTrainedModel(
-        config=config
-    )
+    model = RoBaTPreTrainedModel(config=config)
     logger.info("Model config:")
     logger.info(str(config))
 
