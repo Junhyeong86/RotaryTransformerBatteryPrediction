@@ -1,6 +1,6 @@
 # %%
 from collections import defaultdict
-from typing import Literal
+from typing import Literal, Optional
 
 import numpy
 import torch
@@ -238,37 +238,18 @@ def split_cycle(
 
 # %%
 def collate_fn(batch):
-    discharge_capacity = torch.FloatTensor([
-        item["discharge_capacity"] for item in batch
-    ])
-    first_discharge_capacity = torch.FloatTensor([
-        item["first_discharge_capacity"] for item in batch
-    ])
-    state_of_health = torch.FloatTensor([
-        item["state_of_health"] for item in batch
-    ])
-    time = torch.FloatTensor([
-        item["time"] for item in batch
-    ])
-    voltage_per_time = torch.FloatTensor([
-        item["voltage_per_time"] for item in batch
-    ])
-    current_per_time = torch.FloatTensor([
-        item["current_per_time"] for item in batch
-    ])
-    mask = torch.BoolTensor([
-        item["mask"] for item in batch
-    ])
-
+    discharge_capacity = torch.FloatTensor(batch["discharge_capacity"])
+    first_discharge_capacity = torch.FloatTensor(batch["first_discharge_capacity"])
+    state_of_health = torch.FloatTensor(batch["state_of_health"])
+    time = torch.FloatTensor(batch["time"])
+    voltage_per_time = torch.FloatTensor(batch["voltage_per_time"])
+    current_per_time = torch.FloatTensor(batch["current_per_time"])
+    mask = torch.BoolTensor(batch["mask"])
     label_discharge_capacity = None
     if "label_discharge_capacity" in batch[0]:
-        label_discharge_capacity = torch.FloatTensor([
-            item["label_discharge_capacity"] for item in batch
-        ])
+        label_discharge_capacity = torch.FloatTensor(batch["label_discharge_capacity"])
     if "label_state_of_health" in batch[0]:
-        label_state_of_health = torch.FloatTensor([
-            item["label_state_of_health"] for item in batch
-        ])
+        label_state_of_health = torch.FloatTensor(batch["label_state_of_health"])
 
     ret = {
         "discharge_capacity": discharge_capacity,

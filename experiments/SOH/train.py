@@ -131,6 +131,7 @@ if __name__ == "__main__":
         random_time_sampling,
         collate_fn
     )
+    from rotary_transformer_battery_prediction.dataset import RoBaTDataset
     from rotary_transformer_battery_prediction.compute_metrics import compute_metrics
 
     # %%
@@ -226,6 +227,10 @@ if __name__ == "__main__":
     logger.info(f"padding side: {padding_side}")
 
     # %%
+    # set format
+    ds.set_format(type="torch")
+
+    # %%
     # model
     config = RoBaTConfig(
         embedding_dim=embedding_dim,
@@ -241,6 +246,7 @@ if __name__ == "__main__":
         rotary_embedding_dtype="float32",
         max_sequence_len=max_sequence_len,
         output_attentions=output_attentions,
+        padding_value=padding_value,
     )
     model = RoBaTPreTrainedModel(config=config)
     logger.info("Model config:")
@@ -288,15 +294,15 @@ if __name__ == "__main__":
     # summary
     trainer = Trainer(
         model=model,
-        train_dataset=ds["train"],
-        eval_dataset=ds["validation"],
+        train_dataset=RoBaTDataset(**ds["train"][:]),
+        eval_dataset=RoBaTDataset(**ds["validation"][:]),
         data_collator=collate_fn,
         args=training_args,
         callbacks=callbacks,
         compute_metrics=compute_metrics,
     )
     device = next(model.parameters()).device
-    input_data = collate_fn([ds["train"][i] for i in range(batch_size)])
+    input_data = collate_fn(ds["train"][:batch_size])
     input_data = {k: v.to(device) for k, v in input_data.items() if "label" not in k}
     model_summarize = summary(model, input_data=input_data, verbose=0)
     logger.info("Model summary:")
@@ -310,3 +316,7 @@ if __name__ == "__main__":
     training_time = timedelta(seconds=end_time - start_time)
     logger.info(f"Training time: {training_time}")
     logger.info("Training completed.")
+    trainer.save_state()
+
+    # %%
+    

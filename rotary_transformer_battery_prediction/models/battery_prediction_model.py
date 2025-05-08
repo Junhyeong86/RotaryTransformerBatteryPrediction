@@ -98,7 +98,7 @@ class RoBaTConfig(PretrainedConfig):
             max_sequence_len: int=1024,
             initializer_range: float=0.02,
             output_attentions: bool=False,
-            padding_idx: int=-100,
+            padding_value: int=-100,
         ):
         super().__init__()
         self.embedding_dim = embedding_dim
@@ -115,7 +115,7 @@ class RoBaTConfig(PretrainedConfig):
         self.max_sequence_len = max_sequence_len
         self.initializer_range = initializer_range
         self.output_attentions = output_attentions
-        self.padding_idx = padding_idx
+        self.padding_value = padding_value
 
 # %%
 class RoBaTPreTrainedModel(PreTrainedModel):
@@ -305,8 +305,8 @@ class RoBaTPreTrainedModel(PreTrainedModel):
 
         ret_discharge_capacity = ret_state_of_health * first_discharge_capacity.unsqueeze(1) # (batch_size, cycle_len)
 
-        ret_discharge_capacity = ret_discharge_capacity.masked_fill(mask, self.config.padding_idx)
-        ret_state_of_health = ret_state_of_health.masked_fill(mask, self.config.padding_idx)
+        ret_discharge_capacity = ret_discharge_capacity.masked_fill(mask, self.config.padding_value)
+        ret_state_of_health = ret_state_of_health.masked_fill(mask, self.config.padding_value)
 
         loss = None
         if label_discharge_capacity is not None and self.config.loss_column == "discharge_capacity":
@@ -349,8 +349,8 @@ class RoBaTPreTrainedModel(PreTrainedModel):
                 module.bias.data.zero_()
         elif isinstance(module, nn.Embedding):
             module.weight.data.normal_(mean=0.0, std=std)
-            if module.padding_idx is not None:
-                module.weight.data[module.padding_idx].zero_()
+            if module.padding_value is not None:
+                module.weight.data[module.padding_value].zero_()
         elif isinstance(module, nn.RMSNorm):
             module.weight.data.fill_(1.0)
 
