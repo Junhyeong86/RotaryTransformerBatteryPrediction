@@ -22,6 +22,7 @@ profile_default/
 ipython_config.py
 
 # hidden files
+/figures/*
 /_*
 
 # log checkpoints
