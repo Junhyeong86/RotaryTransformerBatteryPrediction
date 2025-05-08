@@ -6,7 +6,7 @@ cd "../../"
 # Define arrays for models, datasets, and learning rates
 time_transformer_num_layers=(4)
 cycle_transformer_num_layers=(4 8)
-learning_rate=(5e-5)
+learning_rate=(5e-5 5e-7)
 learning_rate_scheduler=(cosine)
 num_training=3
 
@@ -33,7 +33,7 @@ for time_transform_nl in "${time_transformer_num_layers[@]}"; do
                         --cycle_transformer_num_layers "$cycle_transform_nl" \
                         --learning_rate "$lr" \
                         --lr_scheduler "$lr_scheduler" \
-                        --ignore_existence
+                        --training_dir_suffix "$i"
                 done
             done
         done

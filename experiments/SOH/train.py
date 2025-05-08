@@ -32,9 +32,10 @@ if __name__ == "__main__":
         default="cosine",
     )
     parser.add_argument(
-        "--ignore_existence",
-        action="store_true",
-        help="Ignore the existence of the output directory.",
+        "--training_dir_suffix",
+        type=int,
+        help="Suffix for the training directory.",
+        default=0,
     )
 
     # %%
@@ -44,6 +45,7 @@ if __name__ == "__main__":
     cycle_transformer_num_layers = args.cycle_transformer_num_layers
     learning_rate = args.learning_rate
     lr_scheduler = args.lr_scheduler
+    training_dir_suffix = args.training_dir_suffix
 
     # fixed parameters
     ## parameters for dataset
@@ -88,7 +90,8 @@ if __name__ == "__main__":
         f"time_transformer_num_layers={time_transformer_num_layers}"
         f" cycle_transformer_num_layers={cycle_transformer_num_layers}"
         f" learning_rate={learning_rate}"
-        f" lr_scheduler={lr_scheduler}",
+        f" lr_scheduler={lr_scheduler}"
+        f" training_dir_suffix={training_dir_suffix}",
     )
 
     def ckpt_exists(output_dir: str) -> bool:
@@ -103,15 +106,8 @@ if __name__ == "__main__":
                         return True
         return False
 
-    suffix = 1
-    _output_dir = output_dir
-    while True:
-        if ckpt_exists(output_dir) and not args.ignore_existence:
-            raise ValueError(f"checkpoint already exists at \n{output_dir}")
-        if not ckpt_exists(output_dir):
-            break
-        output_dir = _output_dir + f" train_num={suffix}"
-        suffix += 1
+    if ckpt_exists(output_dir):
+        raise ValueError(f"checkpoint already exists at \n{output_dir}")
 
     # %%
     import time
