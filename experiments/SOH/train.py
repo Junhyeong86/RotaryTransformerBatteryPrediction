@@ -68,6 +68,18 @@ if __name__ == "__main__":
     num_training_steps = 20_000
     warmup_steps = 1_000
     weight_decay = 0.01
+    input_datadict = {
+        "discharge_capacity_per_cycle": "discharge_capacity",
+        "first_discharge_capacity": "first_discharge_capacity",
+        "state_of_health_per_cycle": "state_of_health",
+        "time": "time",
+        "voltage_per_time": "voltage_per_time",
+        "current_per_time": "current_per_time",
+        "mask": "mask",
+        "label_discharge_capacity_per_cycle": "label_discharge_capacity",
+        "label_state_of_health_per_cycle": "label_state_of_health",
+    }
+
     # %%
     # output directory
     output_dir = os.path.join(
@@ -203,18 +215,8 @@ if __name__ == "__main__":
 
     # %%
     # rename columns for dataset input
-    ds = ds.rename_columns({
-        "cycle_idx": "cycle_idx",
-        "discharge_capacity_per_cycle": "discharge_capacity",
-        "first_discharge_capacity": "first_discharge_capacity",
-        "state_of_health_per_cycle": "state_of_health",
-        "time": "time",
-        "voltage_per_time": "voltage_per_time",
-        "current_per_time": "current_per_time",
-        "mask": "mask",
-        "label_discharge_capacity_per_cycle": "label_discharge_capacity",
-        "label_state_of_health_per_cycle": "label_state_of_health",
-    })
+    ds = ds.rename_columns(input_datadict)
+    ds = ds.select_columns(list(input_datadict.values()))
 
     # %%
     # shuffle dataset
@@ -294,15 +296,15 @@ if __name__ == "__main__":
     # summary
     trainer = Trainer(
         model=model,
-        train_dataset=RoBaTDataset(**ds["train"][:]),
-        eval_dataset=RoBaTDataset(**ds["validation"][:]),
+        train_dataset=ds["train"],
+        eval_dataset=ds["validation"],
         data_collator=collate_fn,
         args=training_args,
         callbacks=callbacks,
         compute_metrics=compute_metrics,
     )
     device = next(model.parameters()).device
-    input_data = collate_fn(ds["train"][:batch_size])
+    input_data = collate_fn([ds["train"][i] for i in range(batch_size)])
     input_data = {k: v.to(device) for k, v in input_data.items() if "label" not in k}
     model_summarize = summary(model, input_data=input_data, verbose=0)
     logger.info("Model summary:")
@@ -319,4 +321,3 @@ if __name__ == "__main__":
     trainer.save_state()
 
     # %%
-    
