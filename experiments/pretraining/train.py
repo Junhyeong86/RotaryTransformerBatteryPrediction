@@ -77,6 +77,10 @@ def get_eval_df(log_dir: Optional[str]=None) -> pandas.DataFrame:
             if dir_dict is None:
                 continue
             trainer_state = os.path.join(root, directory, "trainer_state.json")
+
+            if not os.path.exists(trainer_state):
+                # skip if trainer_state.json does not exist
+                continue
             trainer_state = json.load(open(trainer_state))
 
             for log in trainer_state["log_history"]:
@@ -218,7 +222,8 @@ if __name__ == "__main__":
         eval_df = get_eval_df(log_dir="log")
         mask = (
             (eval_df["time_transformer_num_layers"] == time_transformer_num_layers) &
-            (eval_df["cycle_transformer_num_layers"] == cycle_transformer_num_layers)
+            (eval_df["cycle_transformer_num_layers"] == cycle_transformer_num_layers) &
+            (eval_df["loss_column"] == "state_of_health")
         )
         eval_df = eval_df.loc[mask].reset_index(drop=True)
         if len(eval_df) == 0:
@@ -356,7 +361,8 @@ if __name__ == "__main__":
     # model
     if loss_column == "discharge_capacity":
         config = RoBaTConfig.from_pretrained(best_model_ckpt)
-        model = RoBaTPreTrainedModel(best_model_ckpt, config=config)
+        config.loss_column = loss_column
+        model = RoBaTPreTrainedModel.from_pretrained(best_model_ckpt, config=config)
     elif loss_column == "state_of_health":
         config = RoBaTConfig(
             embedding_dim=embedding_dim,
