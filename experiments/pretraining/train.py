@@ -1,8 +1,118 @@
 # %%
 import os
 import re
+import json
+from typing import Optional
+from collections import defaultdict
 from argparse import ArgumentParser
 
+import numpy
+import pandas
+
+# %%
+def ckpt_exists(output_dir: str) -> bool:
+    pattern = re.compile(
+        r"/ckpt/\b\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\b" # yyyy-mm-dd_hh-mm-ss
+    )
+    if os.path.exists(output_dir):
+        for root, dirs, _ in os.walk(output_dir):
+            for directory in dirs:
+                full_path = os.path.join(root, directory)
+                if pattern.search(full_path):
+                    return True
+    return False
+
+# %%
+OUTPUT_DIR_FORMAT = os.path.join(
+    "log",
+    "pretraining",
+    "time_transformer_num_layers={time_transformer_num_layers}"
+    " cycle_transformer_num_layers={cycle_transformer_num_layers}"
+    " learning_rate={learning_rate}"
+    " lr_scheduler={lr_scheduler}"
+    " loss_column={loss_column}"
+    " training_dir_suffix={training_dir_suffix}",
+)
+
+# %%
+# find pretrained model
+def dirname2dict(dirname: str) -> dict:
+    """
+    Convert a directory name to a dictionary of parameters.
+    """
+    dir_pattern = re.compile(
+        r"time_transformer_num_layers=(?P<time_transformer_num_layers>\d+)\s+"
+        r"cycle_transformer_num_layers=(?P<cycle_transformer_num_layers>\d+)\s+"
+        r"learning_rate=(?P<learning_rate>[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?)\s+"
+        r"lr_scheduler=(?P<lr_scheduler>[\w-]+)\s+"
+        r"loss_column=(?P<loss_column>(state_of_health|discharge_capacity))\s+"
+        r"training_dir_suffix=(?P<training_dir_suffix>\d+)"
+    )
+    matched = dir_pattern.match(dirname)
+    if matched:
+        return {
+            "time_transformer_num_layers": int(matched.group("time_transformer_num_layers")),
+            "cycle_transformer_num_layers": int(matched.group("cycle_transformer_num_layers")),
+            "learning_rate": float(matched.group("learning_rate")),
+            "lr_scheduler": matched.group("lr_scheduler"),
+            "loss_column": matched.group("loss_column"),
+            "training_dir_suffix": int(matched.group("training_dir_suffix")),
+        }
+    else:
+        return None
+
+# %%
+def get_eval_df(log_dir: Optional[str]=None) -> pandas.DataFrame:
+    """
+    Get the evaluation dataframe.
+    """
+    eval_df = defaultdict(list)
+    log_dir = log_dir if log_dir else "log"
+    for root, dirs, files in os.walk(log_dir):
+        if os.path.basename(root).startswith("_"):
+            # skip hidden directories
+            continue
+        for directory in dirs:
+            dir_dict = dirname2dict(directory)
+            if dir_dict is None:
+                continue
+            trainer_state = os.path.join(root, directory, "trainer_state.json")
+            trainer_state = json.load(open(trainer_state))
+
+            for log in trainer_state["log_history"]:
+                if not "eval_loss" in log:
+                    continue
+                eval_df["dirpath"].append(os.path.join(root, directory))
+                for key, value in dir_dict.items():
+                    eval_df[key].append(value)
+                for key, value in log.items():
+                    eval_df[key].append(value)
+    eval_df = pandas.DataFrame(eval_df)
+    return eval_df
+
+# %%
+def get_model_ckpt(model_dirpath: str) -> str:
+    """
+    Get the model checkpoint from the directory.
+    """
+    pattern = re.compile(
+        r"/ckpt/[^/]+/ckpt_epoch-\d+(\.\d+)?_[^/]+-\d+(\.\d+)?/checkpoint-\d+$"
+    )
+    _model_ckpt = []
+    for root, dirs, files in os.walk(model_dirpath):
+        for directory in dirs:
+            full_path = os.path.join(root, directory)
+            if pattern.search(full_path):
+                _model_ckpt.append(full_path)
+
+    if len(_model_ckpt) > 1:
+        model_ckpt_str = "\n\t-" + "\n\t-".join(_model_ckpt)
+        raise ValueError(f"Multiple model checkpoints found: {model_ckpt_str}")
+
+    model_ckpt = _model_ckpt[0]
+    return model_ckpt
+
+# %%
 if __name__ == "__main__":
     # %%
     parser = ArgumentParser(description="Train a model for SOH prediction.")
@@ -32,6 +142,11 @@ if __name__ == "__main__":
         default="cosine",
     )
     parser.add_argument(
+        "--loss_column",
+        type=str,
+        help="Column name for the loss.",
+    )
+    parser.add_argument(
         "--training_dir_suffix",
         type=int,
         help="Suffix for the training directory.",
@@ -45,6 +160,7 @@ if __name__ == "__main__":
     cycle_transformer_num_layers = args.cycle_transformer_num_layers
     learning_rate = args.learning_rate
     lr_scheduler = args.lr_scheduler
+    loss_column = args.loss_column
     training_dir_suffix = args.training_dir_suffix
 
     # fixed parameters
@@ -84,30 +200,36 @@ if __name__ == "__main__":
 
     # %%
     # output directory
-    output_dir = os.path.join(
-        "log",
-        "SOH",
-        f"time_transformer_num_layers={time_transformer_num_layers}"
-        f" cycle_transformer_num_layers={cycle_transformer_num_layers}"
-        f" learning_rate={learning_rate}"
-        f" lr_scheduler={lr_scheduler}"
-        f" training_dir_suffix={training_dir_suffix}",
+    output_dir = OUTPUT_DIR_FORMAT.format(
+        time_transformer_num_layers=time_transformer_num_layers,
+        cycle_transformer_num_layers=cycle_transformer_num_layers,
+        learning_rate=learning_rate,
+        lr_scheduler=lr_scheduler,
+        loss_column=loss_column,
+        training_dir_suffix=training_dir_suffix,
     )
-
-    def ckpt_exists(output_dir: str) -> bool:
-        pattern = re.compile(
-            r"/ckpt/\b\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\b" # yyyy-mm-dd_hh-mm-ss
-        )
-        if os.path.exists(output_dir):
-            for root, dirs, _ in os.walk(output_dir):
-                for directory in dirs:
-                    full_path = os.path.join(root, directory)
-                    if pattern.search(full_path):
-                        return True
-        return False
 
     if ckpt_exists(output_dir):
         raise ValueError(f"checkpoint already exists at \n{output_dir}")
+
+    # %%
+    # get pretrained model for discharge_capacity loss
+    if loss_column == "discharge_capacity":
+        eval_df = get_eval_df(log_dir="log")
+        mask = (
+            (eval_df["time_transformer_num_layers"] == time_transformer_num_layers) &
+            (eval_df["cycle_transformer_num_layers"] == cycle_transformer_num_layers)
+        )
+        eval_df = eval_df.loc[mask].reset_index(drop=True)
+        if len(eval_df) == 0:
+            raise ValueError(
+                "checkpoint is required for discharge_capacity loss."
+                "please pretrain the model with state_of_health loss with "
+                f"time_transformer_num_layers={time_transformer_num_layers} "
+                f"and cycle_transformer_num_layers={cycle_transformer_num_layers}"
+            )
+        best_model_dirpath = eval_df.loc[eval_df["eval_loss"].idxmin(), "dirpath"]
+        best_model_ckpt = get_model_ckpt(best_model_dirpath)
 
     # %%
     import time
@@ -117,6 +239,9 @@ if __name__ == "__main__":
         FileHandler,
         StreamHandler
     )
+
+    import numpy
+    import pandas
 
     import torch
     from torchinfo import summary
@@ -139,7 +264,6 @@ if __name__ == "__main__":
         random_time_sampling,
         collate_fn
     )
-    from rotary_transformer_battery_prediction.dataset import RoBaTDataset
     from rotary_transformer_battery_prediction.compute_metrics import compute_metrics
 
     # %%
@@ -230,23 +354,27 @@ if __name__ == "__main__":
 
     # %%
     # model
-    config = RoBaTConfig(
-        embedding_dim=embedding_dim,
-        feed_forward_hidden_dim=feed_forward_hidden_dim,
-        num_heads=num_heads,
-        time_transformer_num_layers=time_transformer_num_layers,
-        ref_time_seq_len=ref_time_seq_len,
-        time_transformer_output_dim=time_transformer_output_dim,
-        cycle_transformer_num_layers=cycle_transformer_num_layers,
-        dropout=dropout,
-        freq_base=freq_base,
-        loss_column="state_of_health",
-        rotary_embedding_dtype="float32",
-        max_sequence_len=max_sequence_len,
-        output_attentions=output_attentions,
-        padding_value=padding_value,
-    )
-    model = RoBaTPreTrainedModel(config=config)
+    if loss_column == "discharge_capacity":
+        config = RoBaTConfig.from_pretrained(best_model_ckpt)
+        model = RoBaTPreTrainedModel(best_model_ckpt, config=config)
+    elif loss_column == "state_of_health":
+        config = RoBaTConfig(
+            embedding_dim=embedding_dim,
+            feed_forward_hidden_dim=feed_forward_hidden_dim,
+            num_heads=num_heads,
+            time_transformer_num_layers=time_transformer_num_layers,
+            ref_time_seq_len=ref_time_seq_len,
+            time_transformer_output_dim=time_transformer_output_dim,
+            cycle_transformer_num_layers=cycle_transformer_num_layers,
+            dropout=dropout,
+            freq_base=freq_base,
+            loss_column=loss_column,
+            rotary_embedding_dtype=rotary_embedding_dtype,
+            max_sequence_len=max_sequence_len,
+            output_attentions=output_attentions,
+            padding_value=padding_value,
+        )
+        model = RoBaTPreTrainedModel(config=config)
     logger.info("Model config:")
     logger.info(str(config))
 

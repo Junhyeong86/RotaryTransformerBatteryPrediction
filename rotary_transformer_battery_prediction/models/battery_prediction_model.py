@@ -99,8 +99,9 @@ class RoBaTConfig(PretrainedConfig):
             initializer_range: float=0.02,
             output_attentions: bool=False,
             padding_value: int=-100,
+            **kwargs,
         ):
-        super().__init__()
+        super().__init__(**kwargs)
         self.embedding_dim = embedding_dim
         self.feed_forward_hidden_dim = feed_forward_hidden_dim
         self.num_heads = num_heads
