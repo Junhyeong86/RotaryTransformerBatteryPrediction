@@ -28,6 +28,7 @@ OUTPUT_DIR_FORMAT = os.path.join(
     "{log_basedir}",
     "time_transformer_num_layers={time_transformer_num_layers}"
     " cycle_transformer_num_layers={cycle_transformer_num_layers}"
+    " ode_func_num_layers={ode_func_num_layers}"
     " learning_rate={learning_rate}"
     " lr_scheduler={lr_scheduler}"
     " loss_column={loss_column}"
@@ -43,6 +44,7 @@ def dirname2dict(dirname: str) -> dict:
     dir_pattern = re.compile(
         r"time_transformer_num_layers=(?P<time_transformer_num_layers>\d+)\s+"
         r"cycle_transformer_num_layers=(?P<cycle_transformer_num_layers>\d+)\s+"
+        r"ode_func_num_layers=(?P<ode_func_num_layers>\d+)\s+"
         r"learning_rate=(?P<learning_rate>[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?)\s+"
         r"lr_scheduler=(?P<lr_scheduler>[\w-]+)\s+"
         r"loss_column=(?P<loss_column>(state_of_health|discharge_capacity))\s+"
@@ -125,35 +127,45 @@ if __name__ == "__main__":
         type=str,
         help="Train a model for next cycle prediction or trajectory prediction.",
         choices=["next_cycle_prediction", "trajectory_prediction"],
+        required=True,
     )
     parser.add_argument(
         "--time_transformer_num_layers",
         type=int,
         help="Number of layers in the time-level transformer.",
+        required=True,
     )
     parser.add_argument(
         "--cycle_transformer_num_layers",
         type=int,
         help="Number of layers in the cycle-level transformer.",
+        required=True,
+    )
+    parser.add_argument(
+        "--ode_func_num_layers",
+        type=int,
+        help="Number of layers in the ODE function.",
+        required=True,
     )
     parser.add_argument(
         "--learning_rate",
         type=float,
         help="Learning rate for the optimizer.",
-        default=1e-5,
+        required=True,
     )
     parser.add_argument(
         "--lr_scheduler",
         type=str,
         help="Learning rate scheduler to use.",
         choices=["linear", "cosine"],
-        default="cosine",
+        required=True,
     )
     parser.add_argument(
         "--loss_column",
         type=str,
         help="Column name for the loss.",
         choices=["discharge_capacity", "state_of_health"],
+        required=True,
     )
     parser.add_argument(
         "--training_dir_suffix",
@@ -168,6 +180,7 @@ if __name__ == "__main__":
     model_purpose = args.model_purpose
     time_transformer_num_layers = args.time_transformer_num_layers
     cycle_transformer_num_layers = args.cycle_transformer_num_layers
+    ode_func_num_layers = args.ode_func_num_layers
     learning_rate = args.learning_rate
     lr_scheduler = args.lr_scheduler
     loss_column = args.loss_column
@@ -187,7 +200,6 @@ if __name__ == "__main__":
     num_heads = 8
     ref_time_seq_len = 16
     time_transformer_output_dim = 4
-    ode_num_layers = 4
     ode_step_dtype = "float32"
     dropout = 0.0
     freq_base = 10_000.0
@@ -196,9 +208,10 @@ if __name__ == "__main__":
     output_attentions = False
     ## parameters for training
     batch_size = 32
-    num_training_steps = 20_000
+    num_training_steps = 10_000
     warmup_steps = 1_000
     weight_decay = 0.01
+    early_stopping_patience = 5
     input_datadict = {
         "discharge_capacity_per_cycle": "discharge_capacity",
         "first_discharge_capacity": "first_discharge_capacity",
@@ -219,8 +232,10 @@ if __name__ == "__main__":
         else "trajectory_prediction"
     )
     output_dir = OUTPUT_DIR_FORMAT.format(
+        log_basedir=log_basedir,
         time_transformer_num_layers=time_transformer_num_layers,
         cycle_transformer_num_layers=cycle_transformer_num_layers,
+        ode_func_num_layers=ode_func_num_layers,
         learning_rate=learning_rate,
         lr_scheduler=lr_scheduler,
         loss_column=loss_column,
@@ -235,9 +250,9 @@ if __name__ == "__main__":
     if loss_column == "discharge_capacity":
         eval_df = get_eval_df(log_dir=os.path.join("log", log_basedir))
         mask = (
-            (eval_df["time_transformer_num_layers"] == time_transformer_num_layers) &
-            (eval_df["cycle_transformer_num_layers"] == cycle_transformer_num_layers) &
-            (eval_df["loss_column"] == "state_of_health")
+            (eval_df.get("time_transformer_num_layers", numpy.zeros(len(eval_df))) == time_transformer_num_layers) &
+            (eval_df.get("cycle_transformer_num_layers", numpy.zeros(len(eval_df))) == cycle_transformer_num_layers) &
+            (eval_df.get("loss_column", numpy.zeros(len(eval_df))) == loss_column)
         )
         eval_df = eval_df.loc[mask].reset_index(drop=True)
         if len(eval_df) == 0:
@@ -263,6 +278,7 @@ if __name__ == "__main__":
     import pandas
 
     import torch
+    from torch.optim import AdamW
     from torchinfo import summary
 
     from datasets import load_dataset, Features, Array2D, Sequence, Value
@@ -275,7 +291,7 @@ if __name__ == "__main__":
 
     from rotary_transformer_battery_prediction.models import (
         RoBaTConfig,
-        RoBaTForSOHPrediction,
+        RoBaTForNextCyclePrediction,
         RoBaTForTrajectoryPrediction,
     )
     from rotary_transformer_battery_prediction.utils.transformer_trainer_utils import SaveTopModelsCallback
@@ -389,8 +405,8 @@ if __name__ == "__main__":
         ref_time_seq_len=ref_time_seq_len,
         time_transformer_output_dim=time_transformer_output_dim,
         cycle_transformer_num_layers=cycle_transformer_num_layers,
-        ode_num_layers=ode_num_layers,
         ode_prediction_len=trajectory_pred_len,
+        ode_func_num_layers=ode_func_num_layers,
         ode_step_dtype=ode_step_dtype,
         dropout=dropout,
         freq_base=freq_base,
@@ -401,7 +417,7 @@ if __name__ == "__main__":
         padding_value=padding_value,
     )
     if model_purpose == "next_cycle_prediction":
-        pretrained_model = RoBaTForSOHPrediction
+        pretrained_model = RoBaTForNextCyclePrediction
     elif model_purpose == "trajectory_prediction":
         pretrained_model = RoBaTForTrajectoryPrediction
     if loss_column == "discharge_capacity":
@@ -413,9 +429,21 @@ if __name__ == "__main__":
         model = pretrained_model(config=config)
     elif loss_column == "state_of_health" and model_purpose == "trajectory_prediction":
         model = pretrained_model.from_pretrained(
-            "Junhyeong86/RoBaT-base",
+            "Junhyeong86/RoBaT-base-next-prediction",
             config=config
         )
+
+    if model_purpose == "next_cycle_prediction":
+        optimizer_grouped_parameters = [
+            {"params": [p for n, p in model.named_parameters()], "lr": learning_rate}
+        ]
+    elif model_purpose == "trajectory_prediction":
+        optimizer_grouped_parameters = [
+            {"params": [p for n, p in model.named_parameters() if "model" in n], "lr": 5e-7},
+            {"params": [p for n, p in model.named_parameters() if "model" not in n], "lr": learning_rate}
+        ]
+    optimizer = AdamW(optimizer_grouped_parameters)
+
     logger.info("Model config:")
     logger.info(str(config))
 
@@ -436,7 +464,6 @@ if __name__ == "__main__":
         "warmup_steps": warmup_steps,
         "weight_decay": weight_decay,
         "lr_scheduler_type": lr_scheduler,
-        "optim": "adamw_torch",
         "learning_rate": learning_rate,
         "load_best_model_at_end": True,
         "metric_for_best_model": "loss",
@@ -451,7 +478,7 @@ if __name__ == "__main__":
         top_n=1,
         logger=logger,
     )
-    early_stopping_callback = EarlyStoppingCallback(early_stopping_patience=3)
+    early_stopping_callback = EarlyStoppingCallback(early_stopping_patience=early_stopping_patience)
     callbacks = [
         save_top_models_callback,
         early_stopping_callback,
@@ -467,6 +494,7 @@ if __name__ == "__main__":
         args=training_args,
         callbacks=callbacks,
         compute_metrics=compute_metrics,
+        optimizers=(optimizer, None),
     )
     device = next(model.parameters()).device
     input_data = collate_fn([ds["train"][i] for i in range(batch_size)])

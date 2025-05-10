@@ -28,10 +28,11 @@ for time_transform_nl in "${time_transformer_num_layers[@]}"; do
                     echo "training=$i"
 
                     # Add your training command here, for example:
-                    python3 "./experiments/next cycle prediction/train.py" \
-                        "next_cycle_prediction" \
+                    python3 "./experiments/train.py" \
+                        --model_purpose "next_cycle_prediction" \
                         --time_transformer_num_layers "$time_transform_nl" \
                         --cycle_transformer_num_layers "$cycle_transform_nl" \
+                        --ode_func_num_layers 1 \
                         --learning_rate "$lr" \
                         --lr_scheduler "$lr_scheduler" \
                         --loss_column "discharge_capacity" \

@@ -4,37 +4,36 @@ cd "$SCRIPT_DIR"
 cd "../../"
 
 # Define arrays for models, datasets, and learning rates
-time_transformer_num_layers=(4)
-cycle_transformer_num_layers=(4 8)
-learning_rate=(5e-5)
-learning_rate_scheduler=(cosine)
-num_training=3
+ode_func_num_layers=(1 2)
+learning_rate=(5e-7)
+learning_rate_scheduler=(cosine linear)
+num_training=1
 
 pass_directories=()
 
 # Iterate over model checkpoints
-for time_transform_nl in "${time_transformer_num_layers[@]}"; do
-    for cycle_transform_nl in "${cycle_transformer_num_layers[@]}"; do
-        for lr in "${learning_rate[@]}"; do
-            for lr_scheduler in "${learning_rate_scheduler[@]}"; do
-                for ((i=0; i<num_training; i++)); do
-                    all_directories=()
-                    # Print training details
-                    echo "--------------------------------"
-                    echo "time_transformer_num_layers=$time_transform_nl"
-                    echo "cycle_transformer_num_layers=$cycle_transform_nl"
-                    echo "learning_rate=$lr"
-                    echo "lr_scheduler=$lr_scheduler"
-                    echo "training=$i"
+for ode_func_nl in "${ode_func_num_layers[@]}"; do
+    for lr in "${learning_rate[@]}"; do
+        for lr_scheduler in "${learning_rate_scheduler[@]}"; do
+            for ((i=0; i<num_training; i++)); do
+                all_directories=()
+                # Print training details
+                echo "--------------------------------"
+                echo "ode_func_num_layers=$ode_func_nl"
+                echo "learning_rate=$lr"
+                echo "lr_scheduler=$lr_scheduler"
+                echo "training=$i"
 
-                    # Add your training command here, for example:
-                    python3 "./experiments/next cycle prediction/train.py" \
-                        "trajectory_prediction" \
-                        --learning_rate "$lr" \
-                        --lr_scheduler "$lr_scheduler" \
-                        --loss_column "state_of_health" \
-                        --training_dir_suffix "$i"
-                done
+                # Add your training command here, for example:
+                python3 "./experiments/train.py" \
+                    --model_purpose "trajectory_prediction" \
+                    --time_transformer_num_layers 4 \
+                    --cycle_transformer_num_layers 8 \
+                    --ode_func_num_layers "$ode_func_nl" \
+                    --learning_rate "$lr" \
+                    --lr_scheduler "$lr_scheduler" \
+                    --loss_column "discharge_capacity" \
+                    --training_dir_suffix "$i"
             done
         done
     done

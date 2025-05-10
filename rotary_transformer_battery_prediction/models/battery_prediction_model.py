@@ -95,8 +95,8 @@ class RoBaTConfig(PretrainedConfig):
             ref_time_seq_len: int=16,
             time_transformer_output_dim: int=4,
             cycle_transformer_num_layers: int=4,
-            ode_num_layers: int=4,
             ode_prediction_len: int=128,
+            ode_func_num_layers: int=1,
             ode_step_dtype: str="float32",
             dropout: float=0.0,
             freq_base: float=10000.0,
@@ -116,8 +116,8 @@ class RoBaTConfig(PretrainedConfig):
         self.ref_time_seq_len = ref_time_seq_len
         self.time_transformer_output_dim = time_transformer_output_dim
         self.cycle_transformer_num_layers = cycle_transformer_num_layers
-        self.ode_num_layers = ode_num_layers
         self.ode_prediction_len = ode_prediction_len
+        self.ode_func_num_layers = ode_func_num_layers
         self.ode_step_dtype = ode_step_dtype
         self.dropout = dropout
         self.freq_base = freq_base
@@ -485,7 +485,7 @@ class RoBaTForTrajectoryPrediction(RoBaTPreTrainedModel):
         self.ode_integral = ODEIntegral(
             input_dim=config.embedding_dim,
             hidden_dim=config.feed_forward_hidden_dim,
-            num_layers=config.ode_num_layers,
+            num_layers=config.ode_func_num_layers,
             dropout=config.dropout,
         )
         self.ode_step = torch.arange(
@@ -535,14 +535,16 @@ class RoBaTForTrajectoryPrediction(RoBaTPreTrainedModel):
 
         ret_discharge_capacity = ret_state_of_health * first_discharge_capacity.unsqueeze(1) # (batch_size, ode_prediction_len)
 
-        label_mask = label_discharge_capacity == self.config.padding_value
-        loss = self._calc_loss(
-            ret_discharge_capacity=ret_discharge_capacity,
-            label_discharge_capacity=label_discharge_capacity,
-            ret_state_of_health=ret_state_of_health,
-            label_state_of_health=label_state_of_health,
-            mask=label_mask
-        )
+        loss = None
+        if label_discharge_capacity is not None:
+            label_mask = label_discharge_capacity == self.config.padding_value
+            loss = self._calc_loss(
+                ret_discharge_capacity=ret_discharge_capacity,
+                label_discharge_capacity=label_discharge_capacity,
+                ret_state_of_health=ret_state_of_health,
+                label_state_of_health=label_state_of_health,
+                mask=label_mask
+            )
 
         return RoBaTOutput(
             loss=loss,

@@ -19,6 +19,7 @@ setup(
         "accelerate",
         "datasets",
         "torchinfo",
+        "torchdiffeq",
         "tensorboardX"
     ],
     author_email="jun686868@hanyang.ac.kr"
