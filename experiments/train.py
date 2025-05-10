@@ -25,7 +25,7 @@ def ckpt_exists(output_dir: str) -> bool:
 # %%
 OUTPUT_DIR_FORMAT = os.path.join(
     "log",
-    "pretraining",
+    "{log_basedir}",
     "time_transformer_num_layers={time_transformer_num_layers}"
     " cycle_transformer_num_layers={cycle_transformer_num_layers}"
     " learning_rate={learning_rate}"
@@ -121,16 +121,20 @@ if __name__ == "__main__":
     # %%
     parser = ArgumentParser(description="Train a model for SOH prediction.")
     parser.add_argument(
+        "--model_purpose",
+        type=str,
+        help="Train a model for next cycle prediction or trajectory prediction.",
+        choices=["next_cycle_prediction", "trajectory_prediction"],
+    )
+    parser.add_argument(
         "--time_transformer_num_layers",
         type=int,
         help="Number of layers in the time-level transformer.",
-        required=True,
     )
     parser.add_argument(
         "--cycle_transformer_num_layers",
         type=int,
         help="Number of layers in the cycle-level transformer.",
-        required=True,
     )
     parser.add_argument(
         "--learning_rate",
@@ -149,6 +153,7 @@ if __name__ == "__main__":
         "--loss_column",
         type=str,
         help="Column name for the loss.",
+        choices=["discharge_capacity", "state_of_health"],
     )
     parser.add_argument(
         "--training_dir_suffix",
@@ -160,6 +165,7 @@ if __name__ == "__main__":
     # %%
     # parsing arguments
     args = parser.parse_args()
+    model_purpose = args.model_purpose
     time_transformer_num_layers = args.time_transformer_num_layers
     cycle_transformer_num_layers = args.cycle_transformer_num_layers
     learning_rate = args.learning_rate
@@ -174,12 +180,15 @@ if __name__ == "__main__":
     padding_side = "left"
     random_time_len = 128
     sampling_count = 16
+    trajectory_pred_len = 128
     ## parameters for model
     embedding_dim = 64
     feed_forward_hidden_dim = 128
     num_heads = 8
     ref_time_seq_len = 16
     time_transformer_output_dim = 4
+    ode_num_layers = 4
+    ode_step_dtype = "float32"
     dropout = 0.0
     freq_base = 10_000.0
     rotary_embedding_dtype = "float32"
@@ -204,6 +213,11 @@ if __name__ == "__main__":
 
     # %%
     # output directory
+    log_basedir = (
+        "next_cycle_prediction"
+        if model_purpose == "next_cycle_prediction"
+        else "trajectory_prediction"
+    )
     output_dir = OUTPUT_DIR_FORMAT.format(
         time_transformer_num_layers=time_transformer_num_layers,
         cycle_transformer_num_layers=cycle_transformer_num_layers,
@@ -219,7 +233,7 @@ if __name__ == "__main__":
     # %%
     # get pretrained model for discharge_capacity loss
     if loss_column == "discharge_capacity":
-        eval_df = get_eval_df(log_dir="log")
+        eval_df = get_eval_df(log_dir=os.path.join("log", log_basedir))
         mask = (
             (eval_df["time_transformer_num_layers"] == time_transformer_num_layers) &
             (eval_df["cycle_transformer_num_layers"] == cycle_transformer_num_layers) &
@@ -261,7 +275,8 @@ if __name__ == "__main__":
 
     from rotary_transformer_battery_prediction.models import (
         RoBaTConfig,
-        RoBaTPreTrainedModel,
+        RoBaTForSOHPrediction,
+        RoBaTForTrajectoryPrediction,
     )
     from rotary_transformer_battery_prediction.utils.transformer_trainer_utils import SaveTopModelsCallback
     from rotary_transformer_battery_prediction.preprocess import (
@@ -316,16 +331,23 @@ if __name__ == "__main__":
 
     # %%
     # split cycle
+    split_cycle_kwargs = {
+        "split_cycle_len": split_cycle_len,
+        "padding_value": padding_value,
+        "padding_side": padding_side,
+        "for_trajectory_pred": False
+    }
+    if model_purpose == "trajectory_prediction":
+        split_cycle_kwargs.update({
+            "for_trajectory_pred": True,
+            "trajectory_pred_len": trajectory_pred_len,
+        })
     ds = ds.map(
         split_cycle,
         batched=True,
         batch_size=8,
         remove_columns=ds["train"].column_names,
-        fn_kwargs={
-            "split_cycle_len": split_cycle_len,
-            "padding_value": padding_value,
-            "padding_side": padding_side,
-        },
+        fn_kwargs=split_cycle_kwargs,
         desc="Split cycle",
     )
     features = Features({
@@ -359,28 +381,41 @@ if __name__ == "__main__":
 
     # %%
     # model
+    config = RoBaTConfig(
+        embedding_dim=embedding_dim,
+        feed_forward_hidden_dim=feed_forward_hidden_dim,
+        num_heads=num_heads,
+        time_transformer_num_layers=time_transformer_num_layers,
+        ref_time_seq_len=ref_time_seq_len,
+        time_transformer_output_dim=time_transformer_output_dim,
+        cycle_transformer_num_layers=cycle_transformer_num_layers,
+        ode_num_layers=ode_num_layers,
+        ode_prediction_len=trajectory_pred_len,
+        ode_step_dtype=ode_step_dtype,
+        dropout=dropout,
+        freq_base=freq_base,
+        loss_column=loss_column,
+        rotary_embedding_dtype=rotary_embedding_dtype,
+        max_sequence_len=max_sequence_len,
+        output_attentions=output_attentions,
+        padding_value=padding_value,
+    )
+    if model_purpose == "next_cycle_prediction":
+        pretrained_model = RoBaTForSOHPrediction
+    elif model_purpose == "trajectory_prediction":
+        pretrained_model = RoBaTForTrajectoryPrediction
     if loss_column == "discharge_capacity":
-        config = RoBaTConfig.from_pretrained(best_model_ckpt)
-        config.loss_column = loss_column
-        model = RoBaTPreTrainedModel.from_pretrained(best_model_ckpt, config=config)
-    elif loss_column == "state_of_health":
-        config = RoBaTConfig(
-            embedding_dim=embedding_dim,
-            feed_forward_hidden_dim=feed_forward_hidden_dim,
-            num_heads=num_heads,
-            time_transformer_num_layers=time_transformer_num_layers,
-            ref_time_seq_len=ref_time_seq_len,
-            time_transformer_output_dim=time_transformer_output_dim,
-            cycle_transformer_num_layers=cycle_transformer_num_layers,
-            dropout=dropout,
-            freq_base=freq_base,
-            loss_column=loss_column,
-            rotary_embedding_dtype=rotary_embedding_dtype,
-            max_sequence_len=max_sequence_len,
-            output_attentions=output_attentions,
-            padding_value=padding_value,
+        model = pretrained_model.from_pretrained(
+            best_model_ckpt,
+            config=config
         )
-        model = RoBaTPreTrainedModel(config=config)
+    elif loss_column == "state_of_health" and model_purpose == "next_cycle_prediction":
+        model = pretrained_model(config=config)
+    elif loss_column == "state_of_health" and model_purpose == "trajectory_prediction":
+        model = pretrained_model.from_pretrained(
+            "Junhyeong86/RoBaT-base",
+            config=config
+        )
     logger.info("Model config:")
     logger.info(str(config))
 

@@ -28,12 +28,11 @@ for time_transform_nl in "${time_transformer_num_layers[@]}"; do
                     echo "training=$i"
 
                     # Add your training command here, for example:
-                    python3 "./experiments/pretraining/train.py" \
-                        --time_transformer_num_layers "$time_transform_nl" \
-                        --cycle_transformer_num_layers "$cycle_transform_nl" \
+                    python3 "./experiments/next cycle prediction/train.py" \
+                        "trajectory_prediction" \
                         --learning_rate "$lr" \
                         --lr_scheduler "$lr_scheduler" \
-                        --loss_column "state_of_health" \
+                        --loss_column "discharge_capacity" \
                         --training_dir_suffix "$i"
                 done
             done

@@ -89,7 +89,9 @@ def split_cycle(
         batch,
         split_cycle_len: int=256,
         padding_value: float=-100.0,
-        padding_side: Literal["left", "right"] = "left",
+        padding_side: Literal["left", "right"]="left",
+        for_trajectory_pred: Optional[bool]=False,
+        trajectory_pred_len: int=128,
     ):
     """
     Split the cycle data into chunks of length `split_cycle_len`.
@@ -107,6 +109,10 @@ def split_cycle(
             - The value to use for padding.
         padding_side: str
             - The side to pad the data. Can be "left" or "right".
+        for_trajectory_pred: bool
+            - Whether to use the data for trajectory prediction. If True, the label is the next cycle from previous cycles.
+        trajectory_pred_len: int
+            - The length of the cycle data for trajectory prediction.
     Returns:
         ret: dict
             - fixed cycle length and fixed time length
@@ -147,10 +153,20 @@ def split_cycle(
         cycle_v = numpy.array(cycle_v, dtype=numpy.float32)
         cycle_i = numpy.array(cycle_i, dtype=numpy.float32)
 
-        time_len = len(cycle_t[0])
+        time_len = cycle_t.shape[1]
+        last_chunk_pos = (
+            len(cycle_idx) - 1
+            if not for_trajectory_pred # nex cycle from previous cycles
+            else len(cycle_idx) - trajectory_pred_len
+        )
+        if last_chunk_pos <= 0:
+            continue
+        # if 1,000 cycle and SOH prediction, 999(1,000-1) is the last input cycle
+        # if 1,000 cycle and trajectory prediction with 100 cycle,
+        # 900(1,000-100) is the last input cycle
         chunks_idx = numpy.array_split(
-            range(len(cycle_idx)-1),
-            numpy.arange(split_cycle_len, len(cycle_i), split_cycle_len),
+            range(last_chunk_pos),
+            numpy.arange(split_cycle_len, last_chunk_pos, split_cycle_len),
         )
         for chunk_idx in chunks_idx:
             if len(chunk_idx) == 0:
@@ -223,6 +239,18 @@ def split_cycle(
                 chunk_i[:len(chunk_idx)] = cycle_i[chunk_idx]
             else:
                 raise ValueError(f"Invalid padding_side: {padding_side}")
+
+            if for_trajectory_pred:
+                trajectory_prediction_idx = (
+                    numpy.arange(trajectory_pred_len)
+                    + chunk_idx[-1] + 1
+                )
+                chunk_label_dq = cycle_dq[
+                    trajectory_prediction_idx
+                ]
+                chunk_label_soh = cycle_dq[
+                    trajectory_prediction_idx
+                ] / cycle_dq[chunk_idx[0]]
 
             ret["mask"].append(chunk_mask)
             ret["cycle_idx"].append(chunk_cycle_idx)

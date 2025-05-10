@@ -5,10 +5,10 @@ cd "../../"
 
 # Define arrays for models, datasets, and learning rates
 time_transformer_num_layers=(4)
-cycle_transformer_num_layers=(8)
-learning_rate=(5e-5 1e-5 5e-6 1e-6 5e-7 1e-7 5e-8)
-learning_rate_scheduler=(cosine linear)
-num_training=1
+cycle_transformer_num_layers=(4 8)
+learning_rate=(5e-5)
+learning_rate_scheduler=(cosine)
+num_training=3
 
 pass_directories=()
 
@@ -28,12 +28,13 @@ for time_transform_nl in "${time_transformer_num_layers[@]}"; do
                     echo "training=$i"
 
                     # Add your training command here, for example:
-                    python3 "./experiments/pretraining/train.py" \
+                    python3 "./experiments/next cycle prediction/train.py" \
+                        "next_cycle_prediction" \
                         --time_transformer_num_layers "$time_transform_nl" \
                         --cycle_transformer_num_layers "$cycle_transform_nl" \
                         --learning_rate "$lr" \
                         --lr_scheduler "$lr_scheduler" \
-                        --loss_column "discharge_capacity" \
+                        --loss_column "state_of_health" \
                         --training_dir_suffix "$i"
                 done
             done

@@ -16,12 +16,13 @@ from transformers import (
 
 from .attention_layers import MultiTimeAttention
 from .transformer_layer import Transformer
+from .ode_integral import ODEIntegral
 
 # %%
 @dataclass
 class RoBaTOutput(ModelOutput):
     """
-    Battery Prediction Output
+    Battery Prediction Output for State of Health Prediction
 
     Attributes:
         loss: Optional[torch.FloatTensor]
@@ -30,6 +31,8 @@ class RoBaTOutput(ModelOutput):
             - discharge capacity of the battery
         state_of_health: Optional[torch.FloatTensor]
             - state of health predicted by the model
+        last_hidden_state: Optional[torch.FloatTensor]
+            - last hidden state of the model
         multi_time_attn_weights: Optional[List[torch.FloatTensor]]
             - multi time attention weights
             - length of the list is 1
@@ -43,6 +46,7 @@ class RoBaTOutput(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
     discharge_capacity: Optional[torch.FloatTensor] = None
     state_of_health: Optional[torch.FloatTensor] = None
+    last_hidden_state: Optional[torch.FloatTensor] = None
     multi_time_attn_weights: Optional[List[torch.FloatTensor]] = None
     time_level_rotary_attn_weights: Optional[List[torch.FloatTensor]] = None
     cycle_level_rotary_attn_weights: Optional[List[torch.FloatTensor]] = None
@@ -91,10 +95,13 @@ class RoBaTConfig(PretrainedConfig):
             ref_time_seq_len: int=16,
             time_transformer_output_dim: int=4,
             cycle_transformer_num_layers: int=4,
+            ode_num_layers: int=4,
+            ode_prediction_len: int=128,
+            ode_step_dtype: str="float32",
             dropout: float=0.0,
             freq_base: float=10000.0,
             loss_column: Literal["discharge_capacity", "state_of_health"] = "state_of_health",
-            rotary_embedding_dtype: Optional[str]=None,
+            rotary_embedding_dtype: str="float32",
             max_sequence_len: int=1024,
             initializer_range: float=0.02,
             output_attentions: bool=False,
@@ -109,10 +116,13 @@ class RoBaTConfig(PretrainedConfig):
         self.ref_time_seq_len = ref_time_seq_len
         self.time_transformer_output_dim = time_transformer_output_dim
         self.cycle_transformer_num_layers = cycle_transformer_num_layers
+        self.ode_num_layers = ode_num_layers
+        self.ode_prediction_len = ode_prediction_len
+        self.ode_step_dtype = ode_step_dtype
         self.dropout = dropout
         self.freq_base = freq_base
         self.loss_column = loss_column
-        self.rotary_embedding_dtype = rotary_embedding_dtype if rotary_embedding_dtype is not None else "float32"
+        self.rotary_embedding_dtype = rotary_embedding_dtype
         self.max_sequence_len = max_sequence_len
         self.initializer_range = initializer_range
         self.output_attentions = output_attentions
@@ -120,19 +130,99 @@ class RoBaTConfig(PretrainedConfig):
 
 # %%
 class RoBaTPreTrainedModel(PreTrainedModel):
+    config_class = RoBaTConfig
+    base_model_prefix = "rotary_transformer_battery_prediction"
+    supports_gradient_checkpointing = True
+
+    def __init__(self, config: RoBaTConfig):
+        super().__init__(config)
+        self.config = config
+
+    def _init_weights(self, module):
+        """
+        Initialize the weights of the model.
+
+        Reference:
+            https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py
+
+        Args:
+            module: nn.Module
+                - module to initialize
+        """
+        std = self.config.initializer_range
+        if isinstance(module, nn.Linear):
+            module.weight.data.normal_(mean=0.0, std=std)
+            if module.bias is not None:
+                module.bias.data.zero_()
+        elif isinstance(module, nn.Embedding):
+            module.weight.data.normal_(mean=0.0, std=std)
+            if module.padding_idx is not None:
+                module.weight.data[module.padding_idx].zero_()
+        elif isinstance(module, nn.RMSNorm):
+            module.weight.data.fill_(1.0)
+
+
+    def _calc_loss(
+            self,
+            ret_discharge_capacity: torch.Tensor,
+            label_discharge_capacity: torch.Tensor,
+            ret_state_of_health: torch.Tensor,
+            label_state_of_health: torch.Tensor,
+            mask: torch.Tensor,
+        ) -> torch.Tensor:
+        """
+        Calculate loss for the model.
+        Args:
+            ret_discharge_capacity: torch.Tensor
+                - predicted discharge capacity
+                - shape: (batch_size, cycle_len)
+            label_discharge_capacity: torch.Tensor
+                - label discharge capacity
+                - shape: (batch_size, cycle_len)
+            ret_state_of_health: torch.Tensor
+                - predicted state of health
+                - shape: (batch_size, cycle_len)
+            label_state_of_health: torch.Tensor
+                - label state of health
+                - shape: (batch_size, cycle_len)
+            mask: torch.Tensor
+                - mask for the input data
+                - shape: (batch_size, cycle_len)
+        Returns:
+            torch.Tensor
+                - loss of the model
+        """
+        ret_discharge_capacity = ret_discharge_capacity.masked_fill(mask, self.config.padding_value)
+        ret_state_of_health = ret_state_of_health.masked_fill(mask, self.config.padding_value)
+
+        loss = None
+        if label_discharge_capacity is not None and self.config.loss_column == "discharge_capacity":
+            loss = F.mse_loss(
+                ret_discharge_capacity,
+                label_discharge_capacity,
+                reduction="sum"
+            ) / (~mask).sum() * 1e6
+        elif label_state_of_health is not None and self.config.loss_column == "state_of_health":
+            loss = F.mse_loss(
+                ret_state_of_health,
+                label_state_of_health,
+                reduction="sum"
+            ) / (~mask).sum() * 1e4
+        return loss
+
+# %%
+class RoBaTModel(RoBaTPreTrainedModel):
     """
-    PreTrainedModel for RoBaT.
+    RoBaT Model
 
     Args:
         config: RoBaTConfig
             - configuration for the model
     """
-    config_class = RoBaTConfig
-    base_model_prefix = "rotary_transformer_battery_prediction"
-
     def __init__(self, config: RoBaTConfig):
         super().__init__(config)
-        self.muti_time_attn = MultiTimeAttention(
+
+        self.multi_time_attn = MultiTimeAttention(
             value_dim=2,
             key_dim=1,
             embedding_dim=config.embedding_dim,
@@ -168,7 +258,6 @@ class RoBaTPreTrainedModel(PreTrainedModel):
             ))
         self.cycle_norm = nn.RMSNorm(config.embedding_dim)
 
-        self.output_fc = nn.Linear(config.embedding_dim, 1)
         self.post_init()
 
     def forward(
@@ -257,7 +346,7 @@ class RoBaTPreTrainedModel(PreTrainedModel):
         time_input = time.view(batch_size * cycle_len, time_len, 1)
         # (batch_size * cycle_len, time_len, 1)
 
-        x, _multi_time_attn_weights = self.muti_time_attn(
+        x, _multi_time_attn_weights = self.multi_time_attn(
             key_seq=time_input,
             value_seq=time_features_input,
         ) # (batch_size * cycle_len, ref_time_seq_len, embedding_dim)
@@ -301,7 +390,62 @@ class RoBaTPreTrainedModel(PreTrainedModel):
                 cycle_level_rotary_attn_weights.append(_cycle_level_rotary_attn_weights)
         x = self.cycle_norm(x)
 
-        ret_state_of_health = self.output_fc(x) # (batch_size, cycle_len, 1)
+        return RoBaTOutput(
+            loss=None,
+            discharge_capacity=None,
+            state_of_health=None,
+            last_hidden_state=x,
+            multi_time_attn_weights=multi_time_attn_weights,
+            time_level_rotary_attn_weights=time_level_rotary_attn_weights,
+            cycle_level_rotary_attn_weights=cycle_level_rotary_attn_weights,
+        )
+
+# %%
+class RoBaTForNextCyclePrediction(RoBaTPreTrainedModel):
+    """
+    RoBaT for Next Cycle Prediction
+
+    Args:
+        config: RoBaTConfig
+            - configuration for the model
+    """
+    def __init__(self, config: RoBaTConfig):
+        super().__init__(config)
+        self.model = RoBaTModel(config)
+
+        self.next_cycle_regressor = nn.Linear(config.embedding_dim, 1)
+
+        self.post_init()
+
+    def forward(
+            self,
+            discharge_capacity: torch.Tensor,
+            first_discharge_capacity: torch.Tensor,
+            state_of_health: torch.Tensor,
+            time: torch.Tensor,
+            voltage_per_time: torch.Tensor,
+            current_per_time: torch.Tensor,
+            mask: Optional[torch.Tensor]=None,
+            label_discharge_capacity: Optional[torch.Tensor]=None,
+            label_state_of_health: Optional[torch.Tensor]=None,
+            output_attentions: Optional[bool]=None,
+        ) -> RoBaTOutput:
+
+        output = self.model(
+            discharge_capacity=discharge_capacity,
+            first_discharge_capacity=first_discharge_capacity,
+            state_of_health=state_of_health,
+            time=time,
+            voltage_per_time=voltage_per_time,
+            current_per_time=current_per_time,
+            mask=mask,
+            label_discharge_capacity=label_discharge_capacity,
+            label_state_of_health=label_state_of_health,
+            output_attentions=output_attentions
+        )
+        x = output.last_hidden_state # (batch_size, cycle_len, embedding_dim)
+
+        ret_state_of_health = self.next_cycle_regressor(x) # (batch_size, cycle_len, 1)
         ret_state_of_health = ret_state_of_health.squeeze(2) # (batch_size, cycle_len)
 
         ret_discharge_capacity = ret_state_of_health * first_discharge_capacity.unsqueeze(1) # (batch_size, cycle_len)
@@ -309,50 +453,103 @@ class RoBaTPreTrainedModel(PreTrainedModel):
         ret_discharge_capacity = ret_discharge_capacity.masked_fill(mask, self.config.padding_value)
         ret_state_of_health = ret_state_of_health.masked_fill(mask, self.config.padding_value)
 
-        loss = None
-        if label_discharge_capacity is not None and self.config.loss_column == "discharge_capacity":
-            loss = F.mse_loss(
-                ret_discharge_capacity,
-                label_discharge_capacity,
-                reduction="sum"
-            ) / (~mask).sum() * 1e6  # to mAh loss of discharge capacity
-        elif label_state_of_health is not None and self.config.loss_column == "state_of_health":
-            loss = F.mse_loss(
-                ret_state_of_health,
-                label_state_of_health,
-                reduction="sum"
-            ) / (~mask).sum() * 1e4 # to percentage loss of state of health
+        loss = self._calc_loss(
+            ret_discharge_capacity=ret_discharge_capacity,
+            label_discharge_capacity=label_discharge_capacity,
+            ret_state_of_health=ret_state_of_health,
+            label_state_of_health=label_state_of_health,
+            mask=mask
+        )
 
         return RoBaTOutput(
             loss=loss,
             discharge_capacity=ret_discharge_capacity,
             state_of_health=ret_state_of_health,
-            multi_time_attn_weights=multi_time_attn_weights,
-            time_level_rotary_attn_weights=time_level_rotary_attn_weights,
-            cycle_level_rotary_attn_weights=cycle_level_rotary_attn_weights,
+            multi_time_attn_weights=output.multi_time_attn_weights,
+            time_level_rotary_attn_weights=output.time_level_rotary_attn_weights,
+            cycle_level_rotary_attn_weights=output.cycle_level_rotary_attn_weights,
         )
 
-    def _init_weights(self, module):
-        """
-        Initialize the weights of the model.
+# %%
+class RoBaTForTrajectoryPrediction(RoBaTPreTrainedModel):
+    """
+    RoBaT for Discharge Capacity Prediction
 
-        Reference:
-            https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py
+    Args:
+        config: RoBaTConfig
+            - configuration for the model
+    """
+    def __init__(self, config: RoBaTConfig):
+        super().__init__(config)
+        self.model = RoBaTModel(config)
+        self.ode_integral = ODEIntegral(
+            input_dim=config.embedding_dim,
+            hidden_dim=config.feed_forward_hidden_dim,
+            num_layers=config.ode_num_layers,
+            dropout=config.dropout,
+        )
+        self.ode_step = torch.arange(
+            0,
+            config.ode_prediction_len,
+            dtype=getattr(torch, config.ode_step_dtype),
+        )
+        self.trajectory_regressor = nn.Linear(config.embedding_dim, 1)
+        self.post_init()
 
-        Args:
-            module: nn.Module
-                - module to initialize
-        """
-        std = self.config.initializer_range
-        if isinstance(module, nn.Linear):
-            module.weight.data.normal_(mean=0.0, std=std)
-            if module.bias is not None:
-                module.bias.data.zero_()
-        elif isinstance(module, nn.Embedding):
-            module.weight.data.normal_(mean=0.0, std=std)
-            if module.padding_idx is not None:
-                module.weight.data[module.padding_idx].zero_()
-        elif isinstance(module, nn.RMSNorm):
-            module.weight.data.fill_(1.0)
+    def forward(
+            self,
+            discharge_capacity: torch.Tensor,
+            first_discharge_capacity: torch.Tensor,
+            state_of_health: torch.Tensor,
+            time: torch.Tensor,
+            voltage_per_time: torch.Tensor,
+            current_per_time: torch.Tensor,
+            mask: Optional[torch.Tensor]=None,
+            label_discharge_capacity: Optional[torch.Tensor]=None,
+            label_state_of_health: Optional[torch.Tensor]=None,
+            output_attentions: Optional[bool]=None,
+        ) -> RoBaTOutput:
+        output = self.model(
+            discharge_capacity=discharge_capacity,
+            first_discharge_capacity=first_discharge_capacity,
+            state_of_health=state_of_health,
+            time=time,
+            voltage_per_time=voltage_per_time,
+            current_per_time=current_per_time,
+            mask=mask,
+            label_discharge_capacity=label_discharge_capacity,
+            label_state_of_health=label_state_of_health,
+            output_attentions=output_attentions
+        )
+        x0 = output.last_hidden_state[:, -1, :] # (batch_size, embedding_dim)
+        x = self.ode_integral(
+            x0=x0,
+            t=self.ode_step.to(x0.device)
+        ) # (ode_prediction_len, batch_size, embedding_dim)
+        x = x.permute(1, 0, 2)
+        # (batch_size, ode_prediction_len, embedding_dim)
 
+        ret_state_of_health = self.trajectory_regressor(x) # (batch_size, ode_prediction_len, 1)
+        ret_state_of_health = ret_state_of_health.squeeze(2)
+        # (batch_size, ode_prediction_len)
+
+        ret_discharge_capacity = ret_state_of_health * first_discharge_capacity.unsqueeze(1) # (batch_size, ode_prediction_len)
+
+        label_mask = label_discharge_capacity == self.config.padding_value
+        loss = self._calc_loss(
+            ret_discharge_capacity=ret_discharge_capacity,
+            label_discharge_capacity=label_discharge_capacity,
+            ret_state_of_health=ret_state_of_health,
+            label_state_of_health=label_state_of_health,
+            mask=label_mask
+        )
+
+        return RoBaTOutput(
+            loss=loss,
+            discharge_capacity=ret_discharge_capacity,
+            state_of_health=ret_state_of_health,
+            multi_time_attn_weights=output.multi_time_attn_weights,
+            time_level_rotary_attn_weights=output.time_level_rotary_attn_weights,
+            cycle_level_rotary_attn_weights=output.cycle_level_rotary_attn_weights,
+        )
 # %%
