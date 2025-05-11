@@ -439,8 +439,8 @@ if __name__ == "__main__":
         ]
     elif model_purpose == "trajectory_prediction":
         optimizer_grouped_parameters = [
+            {"params": [p for n, p in model.named_parameters() if "model" not in n], "lr": learning_rate},
             {"params": [p for n, p in model.named_parameters() if "model" in n], "lr": 5e-7},
-            {"params": [p for n, p in model.named_parameters() if "model" not in n], "lr": learning_rate}
         ]
     optimizer = AdamW(optimizer_grouped_parameters)
 
