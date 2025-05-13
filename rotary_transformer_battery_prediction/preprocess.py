@@ -92,6 +92,7 @@ def split_cycle(
         padding_side: Literal["left", "right"]="left",
         for_trajectory_pred: Optional[bool]=False,
         trajectory_pred_len: int=128,
+        trajectory_is_v2: Optional[bool]=False,
     ):
     """
     Split the cycle data into chunks of length `split_cycle_len`.
@@ -113,6 +114,8 @@ def split_cycle(
             - Whether to use the data for trajectory prediction. If True, the label is the next cycle from previous cycles.
         trajectory_pred_len: int
             - The length of the cycle data for trajectory prediction.
+        trajectory_is_v2: bool
+            - Whether to use the v2 trajectory prediction. If True, state_of_health is concatenation of known and unknown cycles.
     Returns:
         ret: dict
             - fixed cycle length and fixed time length
@@ -180,11 +183,6 @@ def split_cycle(
                 fill_value=padding_value,
                 dtype=numpy.int64,
             )
-            chunk_cycle_dq = numpy.full(
-                (split_cycle_len, ),
-                fill_value=padding_value,
-                dtype=numpy.float32,
-            )
             chunk_label_dq = numpy.full(
                 (split_cycle_len, ),
                 fill_value=padding_value,
@@ -220,7 +218,6 @@ def split_cycle(
                 padding_len = split_cycle_len - len(chunk_idx)
                 chunk_mask[:padding_len] = True
                 chunk_cycle_idx[padding_len:] = cycle_idx[chunk_idx]
-                chunk_cycle_dq[padding_len:] = cycle_dq[chunk_idx]
                 chunk_label_dq[padding_len:] = cycle_dq[chunk_idx + 1] # next cycle from previous cycles
                 chunk_cycle_soh[padding_len:] = cycle_dq[chunk_idx] / cycle_dq[chunk_idx[0]]
                 chunk_label_soh[padding_len:] = cycle_dq[chunk_idx + 1] / cycle_dq[chunk_idx[0]] # next cycle from previous cycles
@@ -228,15 +225,7 @@ def split_cycle(
                 chunk_v[padding_len:] = cycle_v[chunk_idx]
                 chunk_i[padding_len:] = cycle_i[chunk_idx]
             elif padding_side == "right":
-                chunk_mask[-len(chunk_idx):] = True
-                chunk_cycle_idx[:len(chunk_idx)] = cycle_idx[chunk_idx]
-                chunk_cycle_dq[:len(chunk_idx)] = cycle_dq[chunk_idx]
-                chunk_label_dq[:len(chunk_idx)] = cycle_dq[chunk_idx + 1] # next cycle from previous cycles
-                chunk_cycle_soh[:len(chunk_idx)] = cycle_dq[chunk_idx] / cycle_dq[chunk_idx[0]]
-                chunk_label_soh[:len(chunk_idx)] = cycle_dq[chunk_idx + 1] / cycle_dq[chunk_idx[0]] # next cycle from previous cycles
-                chunk_t[:len(chunk_idx)] = cycle_t[chunk_idx]
-                chunk_v[:len(chunk_idx)] = cycle_v[chunk_idx]
-                chunk_i[:len(chunk_idx)] = cycle_i[chunk_idx]
+                raise ValueError("right padding is not supported")
             else:
                 raise ValueError(f"Invalid padding_side: {padding_side}")
 
@@ -252,10 +241,15 @@ def split_cycle(
                     trajectory_prediction_idx
                 ] / cycle_dq[chunk_idx[0]]
 
+            if for_trajectory_pred and trajectory_is_v2:
+                chunk_cycle_soh = numpy.hstack([
+                    chunk_cycle_soh,
+                    chunk_label_soh[:-1]
+                ])
+
             ret["mask"].append(chunk_mask)
             ret["cycle_idx"].append(chunk_cycle_idx)
             ret["first_discharge_capacity"].append(cycle_dq[chunk_idx[0]])
-            ret["discharge_capacity_per_cycle"].append(chunk_cycle_dq)
             ret["state_of_health_per_cycle"].append(chunk_cycle_soh)
             ret["label_discharge_capacity_per_cycle"].append(chunk_label_dq)
             ret["label_state_of_health_per_cycle"].append(chunk_label_soh)
@@ -266,9 +260,6 @@ def split_cycle(
 
 # %%
 def collate_fn(batch: List[Dict[str, torch.Tensor]]):
-    discharge_capacity = torch.stack(
-        [item["discharge_capacity"] for item in batch]
-    )
     first_discharge_capacity = torch.stack(
         [item["first_discharge_capacity"] for item in batch]
     )
@@ -298,7 +289,6 @@ def collate_fn(batch: List[Dict[str, torch.Tensor]]):
         )
 
     ret = {
-        "discharge_capacity": discharge_capacity,
         "first_discharge_capacity": first_discharge_capacity,
         "state_of_health": state_of_health,
         "time": time,

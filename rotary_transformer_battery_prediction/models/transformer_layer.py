@@ -1,5 +1,5 @@
 # %%
-from typing import Optional
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -91,7 +91,7 @@ class Transformer(nn.Module):
             x: torch.Tensor,
             key_padding_mask: Optional[torch.Tensor] = None,
             attention_mask: Optional[torch.Tensor] = None,
-        ) -> torch.Tensor:
+        ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             x: torch.Tensor

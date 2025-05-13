@@ -33,7 +33,8 @@ for ode_func_nl in "${ode_func_num_layers[@]}"; do
                     --learning_rate "$lr" \
                     --lr_scheduler "$lr_scheduler" \
                     --loss_column "state_of_health" \
-                    --training_dir_suffix "$i"
+                    --training_dir_suffix "$i" \
+                    --trajectory_is_v2
             done
         done
     done
