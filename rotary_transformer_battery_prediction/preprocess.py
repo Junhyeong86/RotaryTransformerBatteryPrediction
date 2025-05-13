@@ -92,7 +92,6 @@ def split_cycle(
         padding_side: Literal["left", "right"]="left",
         for_trajectory_pred: Optional[bool]=False,
         trajectory_pred_len: int=128,
-        trajectory_is_v2: Optional[bool]=False,
     ):
     """
     Split the cycle data into chunks of length `split_cycle_len`.
@@ -114,8 +113,6 @@ def split_cycle(
             - Whether to use the data for trajectory prediction. If True, the label is the next cycle from previous cycles.
         trajectory_pred_len: int
             - The length of the cycle data for trajectory prediction.
-        trajectory_is_v2: bool
-            - Whether to use the v2 trajectory prediction. If True, state_of_health is concatenation of known and unknown cycles.
     Returns:
         ret: dict
             - fixed cycle length and fixed time length
@@ -240,12 +237,6 @@ def split_cycle(
                 chunk_label_soh = cycle_dq[
                     trajectory_prediction_idx
                 ] / cycle_dq[chunk_idx[0]]
-
-            if for_trajectory_pred and trajectory_is_v2:
-                chunk_cycle_soh = numpy.hstack([
-                    chunk_cycle_soh,
-                    chunk_label_soh[:-1]
-                ])
 
             ret["mask"].append(chunk_mask)
             ret["cycle_idx"].append(chunk_cycle_idx)

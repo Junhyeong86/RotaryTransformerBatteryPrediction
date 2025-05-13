@@ -18,8 +18,6 @@ from .attention_layers import MultiTimeAttention
 from .transformer_layer import Transformer
 from .ode_integral import ODEIntegral
 
-from ..utils.debug_util import shape_mismatch
-
 # %%
 @dataclass
 class RoBaTOutput(ModelOutput):
@@ -52,7 +50,6 @@ class RoBaTOutput(ModelOutput):
     multi_time_attn_weights: Optional[List[torch.FloatTensor]] = None
     time_level_rotary_attn_weights: Optional[List[torch.FloatTensor]] = None
     cycle_level_rotary_attn_weights: Optional[List[torch.FloatTensor]] = None
-    trajectory_pred_rotary_attn_weights: Optional[List[torch.FloatTensor]] = None
 
 # %%
 class RoBaTConfig(PretrainedConfig):
@@ -259,7 +256,7 @@ class RoBaTModel(RoBaTPreTrainedModel):
         self.time_norm = nn.RMSNorm(config.embedding_dim)
         self.time_fc = nn.Linear(config.embedding_dim, config.time_transformer_output_dim)
 
-        self.discharge_capacity_embedding = nn.Linear(1, config.embedding_dim)
+        self.soh_embedding = nn.Linear(1, config.embedding_dim)
         self.cycle_transformer_layers = nn.ModuleList()
         for _ in range(config.cycle_transformer_num_layers):
             self.cycle_transformer_layers.append(Transformer(
@@ -292,7 +289,7 @@ class RoBaTModel(RoBaTPreTrainedModel):
         Args:
             first_discharge_capacity: torch.Tensor
                 - first discharge capacity of the battery
-                - shape: (batch_size, )
+                - shape: (batch_size, cycle_len)
             state_of_health: torch.Tensor
                 - state of health of the battery
                 - shape: (batch_size, cycle_len)
@@ -335,6 +332,7 @@ class RoBaTModel(RoBaTPreTrainedModel):
             cycle_level_rotary_attn_weights = None
 
         batch_size, cycle_len, time_len = time.shape
+        _, _, time_len = time.shape
         # shape_mismatch(discharge_capacity, (batch_size, cycle_len))
         # shape_mismatch(first_discharge_capacity, (batch_size, cycle_len))
         # shape_mismatch(state_of_health, (batch_size, cycle_len))
@@ -384,7 +382,7 @@ class RoBaTModel(RoBaTPreTrainedModel):
         )
 
         state_of_health = state_of_health.unsqueeze(2) # (batch_size, cycle_len, 1)
-        state_of_health = self.discharge_capacity_embedding(state_of_health) # (batch_size, cycle_len, embedding_dim)
+        state_of_health = self.soh_embedding(state_of_health) # (batch_size, cycle_len, embedding_dim)
         x = x + state_of_health
         cycle_attn_mask = torch.ones(
             cycle_len, cycle_len, dtype=torch.bool, device=state_of_health.device
@@ -561,185 +559,3 @@ class RoBaTForTrajectoryPrediction(RoBaTPreTrainedModel):
             cycle_level_rotary_attn_weights=output.cycle_level_rotary_attn_weights,
         )
 # %%
-class RoBatForTrajectoryPredictionV2(RoBaTPreTrainedModel):
-    """
-    RoBaT for Discharge Capacity Prediction
-
-    Args:
-        config: RoBaTConfig
-            - configuration for the model
-    """
-    def __init__(self, config: RoBaTConfig):
-        super().__init__(config)
-        self.model = RoBaTModel(config)
-
-        self.trajectory_embedding = nn.Linear(1, config.embedding_dim)
-        self.trajectory_transformer_layers = nn.ModuleList()
-        for _ in range(config.ode_func_num_layers):
-            self.trajectory_transformer_layers.append(Transformer(
-                embedding_dim=config.embedding_dim,
-                feed_forward_hidden_dim=config.feed_forward_hidden_dim,
-                num_heads=config.num_heads,
-                dropout=config.dropout,
-                max_sequence_len=config.max_sequence_len,
-                freq_base=config.freq_base,
-                rotary_embedding_dtype=getattr(torch, config.rotary_embedding_dtype),
-            ))
-        self.trajectory_norm = nn.RMSNorm(config.embedding_dim)
-        self.trajectory_regressor = nn.Linear(config.embedding_dim, 1)
-
-        self.post_init()
-
-    def forward(
-            self,
-            first_discharge_capacity: torch.Tensor,
-            state_of_health: torch.Tensor,
-            time: torch.Tensor,
-            voltage_per_time: torch.Tensor,
-            current_per_time: torch.Tensor,
-            cv_cycle_output: Optional[RoBaTOutput]=None,
-            mask: Optional[torch.Tensor]=None,
-            label_discharge_capacity: Optional[torch.Tensor]=None,
-            label_state_of_health: Optional[torch.Tensor]=None,
-            output_attentions: Optional[bool]=None,
-        ) -> RoBaTOutput:
-        output_attentions = (
-            output_attentions
-            if output_attentions is not None
-            else self.config.output_attentions
-        )
-        if output_attentions:
-            trajectory_pred_rotary_attn_weights = []
-        else:
-            trajectory_pred_rotary_attn_weights = None
-
-        known_cv_cycle_len = time.shape[1]
-        unknown_cv_cycle_len = state_of_health.shape[1] - known_cv_cycle_len # unknown_cv_cycle_len can be 0 meaning no unknown cycle
-        if cv_cycle_output is None:
-            known_state_of_health = state_of_health[:, :known_cv_cycle_len].clone()
-            output = self.model(
-                first_discharge_capacity=first_discharge_capacity,
-                state_of_health=known_state_of_health,
-                time=time,
-                voltage_per_time=voltage_per_time,
-                current_per_time=current_per_time,
-                mask=mask,
-                label_discharge_capacity=None,
-                label_state_of_health=None,
-                output_attentions=output_attentions
-            )
-        else: # generate caching
-            output = cv_cycle_output
-        x = output.last_hidden_state # (batch_size, known_cv_cycle_len, embedding_dim)
-
-        x_unknown_bias = x[:, -1, :] # (batch_size, embedding_dim)
-        x_unknown_bias = x_unknown_bias.unsqueeze(1) # (batch_size, 1, embedding_dim)
-
-        x = state_of_health[:, known_cv_cycle_len-1:].clone() # (batch_size, unknown_cv_cycle_len + 1, 1)
-        x = x.unsqueeze(2) # (batch_size, unknown_cv_cycle_len + 1, 1)
-        x = self.trajectory_embedding(x)
-        x = x + x_unknown_bias # (batch_size, unknown_cv_cycle_len + 1, embedding_dim)
-        cycle_attn_mask = torch.ones(
-            unknown_cv_cycle_len + 1,
-            unknown_cv_cycle_len + 1,
-            dtype=torch.bool,
-            device=state_of_health.device
-        )
-        cycle_attn_mask = torch.triu(cycle_attn_mask, diagonal=1)
-        for layer in self.trajectory_transformer_layers:
-            x, _trajectory_pred_rotary_attn_weights = layer(
-                x=x,
-                key_padding_mask=None,
-                attention_mask=cycle_attn_mask,
-            ) # (batch_size, unknown_cv_cycle_len + 1, embedding_dim)
-            if output_attentions:
-                trajectory_pred_rotary_attn_weights.append(_trajectory_pred_rotary_attn_weights)
-        x = self.trajectory_norm(x)
-
-        ret_state_of_health = self.trajectory_regressor(x) # (batch_size, unknown_cv_cycle_len + 1, 1)
-        ret_state_of_health = ret_state_of_health.squeeze(2) # (batch_size, unknown_cv_cycle_len)
-
-        ret_discharge_capacity = ret_state_of_health * first_discharge_capacity.unsqueeze(1) # (batch_size, unknown_cv_cycle_len + 1)
-
-        loss = None
-        if label_discharge_capacity is not None:
-            loss = self._calc_loss(
-                ret_discharge_capacity=ret_state_of_health,
-                label_discharge_capacity=label_discharge_capacity,
-                ret_state_of_health=ret_state_of_health,
-                label_state_of_health=label_state_of_health,
-                mask=None
-            )
-
-        return RoBaTOutput(
-            loss=loss,
-            discharge_capacity=ret_discharge_capacity, # (batch_size, unknown_cv_cycle_len)
-            state_of_health=ret_state_of_health, # (batch_size, unknown_cv_cycle_len)
-            multi_time_attn_weights=output.multi_time_attn_weights,
-            time_level_rotary_attn_weights=output.time_level_rotary_attn_weights,
-            cycle_level_rotary_attn_weights=output.cycle_level_rotary_attn_weights,
-            trajectory_pred_rotary_attn_weights=trajectory_pred_rotary_attn_weights
-        )
-
-    def generate(
-            self,
-            generate_cycle_len: int,
-            first_discharge_capacity: torch.Tensor,
-            state_of_health: torch.Tensor,
-            time: torch.Tensor,
-            voltage_per_time: torch.Tensor,
-            current_per_time: torch.Tensor,
-            mask: Optional[torch.Tensor]=None,
-            output_attentions: Optional[bool]=None,
-        ) -> RoBaTOutput:
-        batch_size, cycle_len, time_len = time.shape
-        shape_mismatch(first_discharge_capacity, (batch_size, ))
-        shape_mismatch(state_of_health, (batch_size, cycle_len))
-        shape_mismatch(time, (batch_size, cycle_len, time_len))
-        shape_mismatch(voltage_per_time, (batch_size, cycle_len, time_len))
-        shape_mismatch(current_per_time, (batch_size, cycle_len, time_len))
-        if mask is not None:
-            shape_mismatch(mask, (batch_size, cycle_len))
-
-        cycle_cv_output = self.model(
-            first_discharge_capacity=first_discharge_capacity,
-            state_of_health=state_of_health,
-            time=time,
-            voltage_per_time=voltage_per_time,
-            current_per_time=current_per_time,
-            mask=mask,
-            label_discharge_capacity=None,
-            label_state_of_health=None,
-            output_attentions=output_attentions
-        )
-
-        for _ in range(generate_cycle_len-1):
-            output = self.forward(
-                first_discharge_capacity=first_discharge_capacity,
-                state_of_health=state_of_health,
-                time=time,
-                voltage_per_time=voltage_per_time,
-                current_per_time=current_per_time,
-                cv_cycle_output=cycle_cv_output,
-                mask=mask,
-                label_discharge_capacity=None,
-                label_state_of_health=None,
-                output_attentions=False
-            )
-            state_of_health = torch.cat([
-                state_of_health, output.state_of_health.unsqueeze(1)
-            ], dim=1)
-        output = self.forward(
-            first_discharge_capacity=first_discharge_capacity,
-            state_of_health=state_of_health,
-            time=time,
-            voltage_per_time=voltage_per_time,
-            current_per_time=current_per_time,
-            cv_cycle_output=cycle_cv_output,
-            mask=mask,
-            label_discharge_capacity=None,
-            label_state_of_health=None,
-            output_attentions=output_attentions
-        )
-
-        return output

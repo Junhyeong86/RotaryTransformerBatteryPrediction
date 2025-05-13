@@ -174,11 +174,6 @@ if __name__ == "__main__":
         help="Suffix for the training directory.",
         default=0,
     )
-    parser.add_argument(
-        "--trajectory_is_v2",
-        action="store_true",
-        help="Use trajectory prediction v2.",
-    )
 
     # %%
     # parsing arguments
@@ -191,7 +186,6 @@ if __name__ == "__main__":
     lr_scheduler = args.lr_scheduler
     loss_column = args.loss_column
     training_dir_suffix = args.training_dir_suffix
-    trajectory_is_v2 = args.trajectory_is_v2
 
     # fixed parameters
     ## parameters for dataset
@@ -232,13 +226,11 @@ if __name__ == "__main__":
 
     # %%
     # output directory
-    if model_purpose == "next_cycle_prediction":
-        log_basedir = "next_cycle_prediction"
-    elif model_purpose == "trajectory_prediction" and not trajectory_is_v2:
-        log_basedir = "trajectory_prediction"
-    elif model_purpose == "trajectory_prediction" and trajectory_is_v2:
-        log_basedir = "trajectory_prediction_v2"
-
+    log_basedir = (
+        "next_cycle_prediction"
+        if model_purpose == "next_cycle_prediction"
+        else "trajectory_prediction"
+    )
     output_dir = OUTPUT_DIR_FORMAT.format(
         log_basedir=log_basedir,
         time_transformer_num_layers=time_transformer_num_layers,
@@ -302,7 +294,6 @@ if __name__ == "__main__":
         RoBaTConfig,
         RoBaTForNextCyclePrediction,
         RoBaTForTrajectoryPrediction,
-        RoBatForTrajectoryPredictionV2,
     )
     from rotary_transformer_battery_prediction.utils.transformer_trainer_utils import SaveTopModelsCallback
     from rotary_transformer_battery_prediction.preprocess import (
@@ -367,7 +358,6 @@ if __name__ == "__main__":
         split_cycle_kwargs.update({
             "for_trajectory_pred": True,
             "trajectory_pred_len": trajectory_pred_len,
-            "trajectory_is_v2": trajectory_is_v2,
         })
     ds = ds.map(
         split_cycle,
@@ -429,10 +419,8 @@ if __name__ == "__main__":
     )
     if model_purpose == "next_cycle_prediction":
         pretrained_model = RoBaTForNextCyclePrediction
-    elif model_purpose == "trajectory_prediction" and not trajectory_is_v2:
+    elif model_purpose == "trajectory_prediction":
         pretrained_model = RoBaTForTrajectoryPrediction
-    elif model_purpose == "trajectory_prediction" and trajectory_is_v2:
-        pretrained_model = RoBatForTrajectoryPredictionV2
     if loss_column == "discharge_capacity":
         model = pretrained_model.from_pretrained(
             best_model_ckpt,
@@ -446,16 +434,16 @@ if __name__ == "__main__":
             config=config
         )
 
-    # if model_purpose == "next_cycle_prediction":
-    #     optimizer_grouped_parameters = [
-    #         {"params": [p for n, p in model.named_parameters()], "lr": learning_rate}
-    #     ]
-    # elif model_purpose == "trajectory_prediction":
-    #     optimizer_grouped_parameters = [
-    #         {"params": [p for n, p in model.named_parameters() if "model" not in n], "lr": learning_rate},
-    #         {"params": [p for n, p in model.named_parameters() if "model" in n], "lr": 5e-7},
-    #     ]
-    # optimizer = AdamW(optimizer_grouped_parameters)
+    if model_purpose == "next_cycle_prediction":
+        optimizer_grouped_parameters = [
+            {"params": [p for n, p in model.named_parameters()], "lr": learning_rate}
+        ]
+    elif model_purpose == "trajectory_prediction":
+        optimizer_grouped_parameters = [
+            {"params": [p for n, p in model.named_parameters() if "model" not in n], "lr": learning_rate},
+            {"params": [p for n, p in model.named_parameters() if "model" in n], "lr": 5e-7},
+        ]
+    optimizer = AdamW(optimizer_grouped_parameters)
 
     logger.info("Model config:")
     logger.info(str(config))

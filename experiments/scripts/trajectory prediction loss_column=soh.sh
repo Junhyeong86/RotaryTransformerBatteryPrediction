@@ -4,8 +4,8 @@ cd "$SCRIPT_DIR"
 cd "../../"
 
 # Define arrays for models, datasets, and learning rates
-ode_func_num_layers=(4)
-learning_rate=(5e-5)
+ode_func_num_layers=(2 4)
+learning_rate=(5e-5 1e-5)
 learning_rate_scheduler=(cosine)
 num_training=3
 
@@ -33,8 +33,7 @@ for ode_func_nl in "${ode_func_num_layers[@]}"; do
                     --learning_rate "$lr" \
                     --lr_scheduler "$lr_scheduler" \
                     --loss_column "state_of_health" \
-                    --training_dir_suffix "$i" \
-                    --trajectory_is_v2
+                    --training_dir_suffix "$i"
             done
         done
     done
