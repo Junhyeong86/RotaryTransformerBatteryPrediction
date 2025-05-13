@@ -163,6 +163,12 @@ class RoBaTPreTrainedModel(PreTrainedModel):
                 module.weight.data[module.padding_idx].zero_()
         elif isinstance(module, nn.RMSNorm):
             module.weight.data.fill_(1.0)
+        elif isinstance(module, nn.MultiheadAttention):
+            for name, param in module.named_parameters():
+                if "weight" in name:
+                    param.data.normal_(mean=0.0, std=std)
+                elif "bias" in name:
+                    param.data.zero_()
 
 
     def _calc_loss(
@@ -171,7 +177,7 @@ class RoBaTPreTrainedModel(PreTrainedModel):
             label_discharge_capacity: torch.Tensor,
             ret_state_of_health: torch.Tensor,
             label_state_of_health: torch.Tensor,
-            mask: torch.Tensor,
+            mask: Optional[torch.Tensor]=None,
         ) -> torch.Tensor:
         """
         Calculate loss for the model.
@@ -188,15 +194,21 @@ class RoBaTPreTrainedModel(PreTrainedModel):
             label_state_of_health: torch.Tensor
                 - label state of health
                 - shape: (batch_size, cycle_len)
-            mask: torch.Tensor
+            mask: Optional[torch.Tensor]
                 - mask for the input data
                 - shape: (batch_size, cycle_len)
         Returns:
             torch.Tensor
                 - loss of the model
         """
-        ret_discharge_capacity = ret_discharge_capacity.masked_fill(mask, self.config.padding_value)
-        ret_state_of_health = ret_state_of_health.masked_fill(mask, self.config.padding_value)
+        if mask is not None:
+            ret_discharge_capacity = ret_discharge_capacity.masked_fill(mask, self.config.padding_value)
+            ret_state_of_health = ret_state_of_health.masked_fill(mask, self.config.padding_value)
+            loss_scailing = (~mask).sum()
+        elif mask is None and self.config.loss_column == "discharge_capacity":
+            loss_scailing = ret_discharge_capacity.shape[0] * ret_discharge_capacity.shape[1]
+        elif mask is None and self.config.loss_column == "state_of_health":
+            loss_scailing = ret_state_of_health.shape[0] * ret_state_of_health.shape[1]
 
         loss = None
         if label_discharge_capacity is not None and self.config.loss_column == "discharge_capacity":
@@ -204,13 +216,13 @@ class RoBaTPreTrainedModel(PreTrainedModel):
                 ret_discharge_capacity,
                 label_discharge_capacity,
                 reduction="sum"
-            ) / (~mask).sum() * 1e6
+            ) / loss_scailing * 1e6
         elif label_state_of_health is not None and self.config.loss_column == "state_of_health":
             loss = F.mse_loss(
                 ret_state_of_health,
                 label_state_of_health,
                 reduction="sum"
-            ) / (~mask).sum() * 1e4
+            ) / loss_scailing * 1e4
         return loss
 
 # %%
@@ -562,9 +574,9 @@ class RoBatForTrajectoryPredictionV2(RoBaTPreTrainedModel):
         self.model = RoBaTModel(config)
 
         self.trajectory_embedding = nn.Linear(1, config.embedding_dim)
-        self.transformer_layers = nn.ModuleList()
+        self.trajectory_transformer_layers = nn.ModuleList()
         for _ in range(config.ode_func_num_layers):
-            self.transformer_layers.append(Transformer(
+            self.trajectory_transformer_layers.append(Transformer(
                 embedding_dim=config.embedding_dim,
                 feed_forward_hidden_dim=config.feed_forward_hidden_dim,
                 num_heads=config.num_heads,
@@ -603,10 +615,11 @@ class RoBatForTrajectoryPredictionV2(RoBaTPreTrainedModel):
 
         known_cv_cycle_len = time.shape[1]
         unknown_cv_cycle_len = state_of_health.shape[1] - known_cv_cycle_len # unknown_cv_cycle_len can be 0 meaning no unknown cycle
-        if cv_cycle_output is not None:
+        if cv_cycle_output is None:
+            known_state_of_health = state_of_health[:, :known_cv_cycle_len].clone()
             output = self.model(
                 first_discharge_capacity=first_discharge_capacity,
-                state_of_health=state_of_health[:, :known_cv_cycle_len],
+                state_of_health=known_state_of_health,
                 time=time,
                 voltage_per_time=voltage_per_time,
                 current_per_time=current_per_time,
@@ -622,9 +635,9 @@ class RoBatForTrajectoryPredictionV2(RoBaTPreTrainedModel):
         x_unknown_bias = x[:, -1, :] # (batch_size, embedding_dim)
         x_unknown_bias = x_unknown_bias.unsqueeze(1) # (batch_size, 1, embedding_dim)
 
-        x = self.trajectory_embedding(
-            state_of_health[:, known_cv_cycle_len-1:]
-        )
+        x = state_of_health[:, known_cv_cycle_len-1:].clone() # (batch_size, unknown_cv_cycle_len + 1, 1)
+        x = x.unsqueeze(2) # (batch_size, unknown_cv_cycle_len + 1, 1)
+        x = self.trajectory_embedding(x)
         x = x + x_unknown_bias # (batch_size, unknown_cv_cycle_len + 1, embedding_dim)
         cycle_attn_mask = torch.ones(
             unknown_cv_cycle_len + 1,
@@ -633,7 +646,7 @@ class RoBatForTrajectoryPredictionV2(RoBaTPreTrainedModel):
             device=state_of_health.device
         )
         cycle_attn_mask = torch.triu(cycle_attn_mask, diagonal=1)
-        for layer in self.transformer_layers:
+        for layer in self.trajectory_transformer_layers:
             x, _trajectory_pred_rotary_attn_weights = layer(
                 x=x,
                 key_padding_mask=None,
@@ -648,13 +661,15 @@ class RoBatForTrajectoryPredictionV2(RoBaTPreTrainedModel):
 
         ret_discharge_capacity = ret_state_of_health * first_discharge_capacity.unsqueeze(1) # (batch_size, unknown_cv_cycle_len + 1)
 
-        loss = self._calc_loss(
-            ret_discharge_capacity=ret_state_of_health,
-            label_discharge_capacity=label_discharge_capacity,
-            ret_state_of_health=ret_state_of_health,
-            label_state_of_health=label_state_of_health,
-            mask=None
-        )
+        loss = None
+        if label_discharge_capacity is not None:
+            loss = self._calc_loss(
+                ret_discharge_capacity=ret_state_of_health,
+                label_discharge_capacity=label_discharge_capacity,
+                ret_state_of_health=ret_state_of_health,
+                label_state_of_health=label_state_of_health,
+                mask=None
+            )
 
         return RoBaTOutput(
             loss=loss,

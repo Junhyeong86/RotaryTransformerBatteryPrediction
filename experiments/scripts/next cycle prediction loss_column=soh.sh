@@ -5,7 +5,7 @@ cd "../../"
 
 # Define arrays for models, datasets, and learning rates
 time_transformer_num_layers=(4)
-cycle_transformer_num_layers=(4 8)
+cycle_transformer_num_layers=(8)
 learning_rate=(5e-5)
 learning_rate_scheduler=(cosine)
 num_training=3

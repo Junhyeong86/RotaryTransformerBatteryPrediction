@@ -4,10 +4,10 @@ cd "$SCRIPT_DIR"
 cd "../../"
 
 # Define arrays for models, datasets, and learning rates
-ode_func_num_layers=(2)
-learning_rate=(5e-7)
-learning_rate_scheduler=(cosine linear)
-num_training=1
+ode_func_num_layers=(2 4)
+learning_rate=(1e-5 5e-6 1e-6 5e-7 1e-7)
+learning_rate_scheduler=(cosine)
+num_training=1 # because capacity training is further pre-training process, num_training=1
 
 pass_directories=()
 

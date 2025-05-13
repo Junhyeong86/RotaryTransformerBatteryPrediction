@@ -7,8 +7,8 @@ cd "../../"
 time_transformer_num_layers=(4)
 cycle_transformer_num_layers=(8)
 learning_rate=(5e-5 1e-5 5e-6 1e-6 5e-7 1e-7 5e-8)
-learning_rate_scheduler=(cosine linear)
-num_training=1
+learning_rate_scheduler=(cosine)
+num_training=1 # because capacity training is further pre-training process, num_training=1
 
 pass_directories=()
 

@@ -55,6 +55,7 @@ def dirname2dict(dirname: str) -> dict:
         return {
             "time_transformer_num_layers": int(matched.group("time_transformer_num_layers")),
             "cycle_transformer_num_layers": int(matched.group("cycle_transformer_num_layers")),
+            "ode_func_num_layers": int(matched.group("ode_func_num_layers")),
             "learning_rate": float(matched.group("learning_rate")),
             "lr_scheduler": matched.group("lr_scheduler"),
             "loss_column": matched.group("loss_column"),
@@ -219,7 +220,6 @@ if __name__ == "__main__":
     weight_decay = 0.01
     early_stopping_patience = 5
     input_datadict = {
-        "discharge_capacity_per_cycle": "discharge_capacity",
         "first_discharge_capacity": "first_discharge_capacity",
         "state_of_health_per_cycle": "state_of_health",
         "time": "time",
@@ -232,13 +232,13 @@ if __name__ == "__main__":
 
     # %%
     # output directory
-    log_basedir = "log"
     if model_purpose == "next_cycle_prediction":
-        log_basedir = os.path.join(log_basedir, "next_cycle_prediction")
+        log_basedir = "next_cycle_prediction"
     elif model_purpose == "trajectory_prediction" and not trajectory_is_v2:
-        log_basedir = os.path.join(log_basedir, "trajectory_prediction")
+        log_basedir = "trajectory_prediction"
     elif model_purpose == "trajectory_prediction" and trajectory_is_v2:
-        log_basedir = os.path.join(log_basedir, "trajectory_prediction_v2")
+        log_basedir = "trajectory_prediction_v2"
+
     output_dir = OUTPUT_DIR_FORMAT.format(
         log_basedir=log_basedir,
         time_transformer_num_layers=time_transformer_num_layers,
@@ -260,7 +260,8 @@ if __name__ == "__main__":
         mask = (
             (eval_df.get("time_transformer_num_layers", numpy.zeros(len(eval_df))) == time_transformer_num_layers) &
             (eval_df.get("cycle_transformer_num_layers", numpy.zeros(len(eval_df))) == cycle_transformer_num_layers) &
-            (eval_df.get("loss_column", numpy.zeros(len(eval_df))) == loss_column)
+            (eval_df.get("ode_func_num_layers", numpy.zeros(len(eval_df))) == ode_func_num_layers) &
+            (eval_df.get("loss_column", numpy.zeros(len(eval_df))) == "state_of_health")
         )
         eval_df = eval_df.loc[mask].reset_index(drop=True)
         if len(eval_df) == 0:
@@ -445,16 +446,16 @@ if __name__ == "__main__":
             config=config
         )
 
-    if model_purpose == "next_cycle_prediction":
-        optimizer_grouped_parameters = [
-            {"params": [p for n, p in model.named_parameters()], "lr": learning_rate}
-        ]
-    elif model_purpose == "trajectory_prediction":
-        optimizer_grouped_parameters = [
-            {"params": [p for n, p in model.named_parameters() if "model" not in n], "lr": learning_rate},
-            {"params": [p for n, p in model.named_parameters() if "model" in n], "lr": 5e-7},
-        ]
-    optimizer = AdamW(optimizer_grouped_parameters)
+    # if model_purpose == "next_cycle_prediction":
+    #     optimizer_grouped_parameters = [
+    #         {"params": [p for n, p in model.named_parameters()], "lr": learning_rate}
+    #     ]
+    # elif model_purpose == "trajectory_prediction":
+    #     optimizer_grouped_parameters = [
+    #         {"params": [p for n, p in model.named_parameters() if "model" not in n], "lr": learning_rate},
+    #         {"params": [p for n, p in model.named_parameters() if "model" in n], "lr": 5e-7},
+    #     ]
+    # optimizer = AdamW(optimizer_grouped_parameters)
 
     logger.info("Model config:")
     logger.info(str(config))
@@ -506,7 +507,7 @@ if __name__ == "__main__":
         args=training_args,
         callbacks=callbacks,
         compute_metrics=compute_metrics,
-        optimizers=(optimizer, None),
+        # optimizers=(optimizer, None),
     )
     device = next(model.parameters()).device
     input_data = collate_fn([ds["train"][i] for i in range(batch_size)])
