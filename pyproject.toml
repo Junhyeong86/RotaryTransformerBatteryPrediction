@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "" }
 authors = [
-    {name = "junhyeong lee", email = "jun686868@hanyang.ac.kr"}
+    {name = "junhyeong lee", email = "jun686868@hanyang.ac.kr"},
     {name = "insup kim", email = "kisdy0924@naver.com"}
 ]
 
