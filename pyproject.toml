@@ -21,6 +21,7 @@ dependencies = [
     "transformers",
     "accelerate",
     "datasets",
+    "hydra-core",
     "torchinfo",
     "torchdiffeq",
     "tensorboardX",
