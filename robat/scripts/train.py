@@ -30,14 +30,14 @@ def main(cfg: DictConfig) -> None:
     """
     assert cfg.job_name == "train", "This script is only for training. Please use the correct job name."
 
-    hydra_output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.training_output_dir
-    for _ in range(cfg.get("repeat", 1)):
-        training_output_dir = os.path.join(hydra_output_dir, time.strftime("%Y-%m-%d_%H-%M-%S"))
+    hydra_output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
+    for i in range(cfg.get("repeat", 1)):
+        training_output_dir = os.path.join(hydra_output_dir, f"repeat={i+1}")
 
         # call the logger
         logger = get_logger(
             level="INFO",
-            file_name=f"{training_output_dir}/log.log",
+            file_name=f"{hydra_output_dir}/log.log",
         )
         logger.info("Starting training script...")
         logger.info(f"training_output_dir: {training_output_dir}")
@@ -58,7 +58,7 @@ def main(cfg: DictConfig) -> None:
         num_training_steps = training_args.pop("num_train_steps")
         if num_training_steps > 0:
             training_args["num_train_epochs"] = num_training_steps / (len(ds["train"]) // batch_size + 1)
-        training_args["training_output_dir"] = training_output_dir
+        training_args["output_dir"] = training_output_dir
         training_args = TrainingArguments(**training_args)
         logger.info(f"Training arguments: {training_args}")
 
