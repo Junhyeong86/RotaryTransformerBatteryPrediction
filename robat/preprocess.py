@@ -5,6 +5,15 @@ from typing import Literal, Optional, List, Dict
 import numpy
 import torch
 
+from datasets import (
+    DatasetDict,
+    load_dataset,
+    Features,
+    Sequence,
+    Value,
+    Array2D
+)
+
 # %%
 def random_time_sampling(
         batch: dict,
@@ -248,6 +257,93 @@ def split_cycle(
             ret["voltage_per_time"].append(chunk_v)
             ret["current_per_time"].append(chunk_i)
     return dict(ret)
+
+# %%
+def ds_preprocess_for_training(
+        ds_name: str,
+        model_purpose: Literal["next_cycle_prediction", "trajectory_prediction"],
+        random_time_len: int,
+        sampling_count: int,
+        split_cycle_len: int,
+        padding_value: float = -100.0,
+        padding_side: Literal["left", "right"] = "left",
+        trajectory_pred_len: Optional[int] = None,
+    ) -> DatasetDict:
+    ds = load_dataset(ds_name)
+
+    # random time sampling
+    ds = ds.map(
+        random_time_sampling,
+        batched=True,
+        batch_size=8,
+        remove_columns=ds["train"].column_names,
+        fn_kwargs={
+            "random_time_len": random_time_len,
+            "sampling_count": sampling_count,
+        },
+        desc="Random time sampling",
+    )
+    features = Features({
+        "cycle_idx": Sequence(Value(dtype="int32")),
+        "discharge_capacity_per_cycle": Sequence(Value(dtype="float32")),
+        "time": Array2D(shape=(None, random_time_len), dtype="float32"),
+        "voltage_per_time": Array2D(shape=(None, random_time_len), dtype="float32"),
+        "current_per_time": Array2D(shape=(None, random_time_len), dtype="float32"),
+    })
+    ds = ds.cast(features)
+
+    # %%
+    # split cycle
+    split_cycle_kwargs = {
+        "split_cycle_len": split_cycle_len,
+        "padding_value": padding_value,
+        "padding_side": padding_side,
+        "for_trajectory_pred": False
+    }
+    if model_purpose == "trajectory_prediction":
+        split_cycle_kwargs.update({
+            "for_trajectory_pred": True,
+            "trajectory_pred_len": trajectory_pred_len,
+        })
+    ds = ds.map(
+        split_cycle,
+        batched=True,
+        batch_size=8,
+        remove_columns=ds["train"].column_names,
+        fn_kwargs=split_cycle_kwargs,
+        desc="Split cycle",
+    )
+    features = Features({
+        "cycle_idx": Sequence(Value(dtype="int32")),
+        "time": Array2D(shape=(split_cycle_len, random_time_len), dtype="float32"),
+        "voltage_per_time": Array2D(shape=(split_cycle_len, random_time_len), dtype="float32"),
+        "current_per_time": Array2D(shape=(split_cycle_len, random_time_len), dtype="float32"),
+        "mask": Sequence(Value(dtype="bool")),
+        "first_discharge_capacity": Value(dtype="float32"),
+        "state_of_health_per_cycle": Sequence(Value(dtype="float32")),
+        "label_discharge_capacity_per_cycle": Sequence(Value(dtype="float32")),
+        "label_state_of_health_per_cycle": Sequence(Value(dtype="float32")),
+    })
+    ds = ds.cast(features)
+
+    # %%
+    input_datadict = {
+        "first_discharge_capacity": "first_discharge_capacity",
+        "state_of_health_per_cycle": "state_of_health",
+        "time": "time",
+        "voltage_per_time": "voltage_per_time",
+        "current_per_time": "current_per_time",
+        "mask": "mask",
+        "label_discharge_capacity_per_cycle": "label_discharge_capacity",
+        "label_state_of_health_per_cycle": "label_state_of_health",
+    }
+    ds = ds.rename_columns(input_datadict)
+    ds = ds.select_columns(list(input_datadict.values()))
+
+    # %%
+    # set format
+    ds.set_format("torch")
+    return ds
 
 # %%
 def collate_fn(batch: List[Dict[str, torch.Tensor]]):

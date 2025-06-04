@@ -1,0 +1,32 @@
+_target_: "robat.models.battery_prediction_model.RoBaTConfig"
+# for transformer layers
+embedding_dim: 64
+feed_forward_hidden_dim: 128
+num_heads: 8
+
+# for time transformer layers
+time_transformer_num_layers: 4
+random_time_len: 128
+ref_time_seq_len: 16
+time_transformer_output_dim: 4 # ref_time_seq_len * time_transformer_output_dim = embedding_dim
+
+# for cycle transformer layers
+cycle_transformer_num_layers: 8
+
+# for trajectory neural-ode layers
+ode_prediction_len: 128
+ode_func_num_layers: 2
+ode_step_dtype: "float32"
+
+# for rotary transformer layers
+freq_base: 10000
+rotary_embedding_dtype: "float32"
+max_sequence_len: 1024
+
+# training informations
+dropout: 0.0
+loss_column: "state_of_health"
+initializer_range: 0.02
+output_attentions: false
+padding_value: -100
+padding_side: "left"

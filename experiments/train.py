@@ -290,18 +290,18 @@ if __name__ == "__main__":
     from transformers.utils import logging
     from transformers.trainer_callback import EarlyStoppingCallback
 
-    from rotary_transformer_battery_prediction.models import (
+    from robat.models import (
         RoBaTConfig,
         RoBaTForNextCyclePrediction,
         RoBaTForTrajectoryPrediction,
     )
-    from rotary_transformer_battery_prediction.utils.transformer_trainer_utils import SaveTopModelsCallback
-    from rotary_transformer_battery_prediction.preprocess import (
+    from robat.utils.transformer_trainer_utils import SaveTopModelsCallback
+    from robat.preprocess import (
         split_cycle,
         random_time_sampling,
         collate_fn
     )
-    from rotary_transformer_battery_prediction.compute_metrics import compute_metrics
+    from robat.compute_metrics import compute_metrics
 
     # %%
     # check if output directory exists

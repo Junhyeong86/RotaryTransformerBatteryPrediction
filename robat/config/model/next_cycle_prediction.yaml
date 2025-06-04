@@ -1,0 +1,3 @@
+_target_: "robat.models.battery_prediction_model.RoBaTForNextCyclePrediction"
+config: ${model.config}
+model_purpose: next_cycle_prediction

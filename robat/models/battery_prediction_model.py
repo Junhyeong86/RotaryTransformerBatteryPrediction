@@ -134,8 +134,8 @@ class RoBaTPreTrainedModel(PreTrainedModel):
     base_model_prefix = "rotary_transformer_battery_prediction"
     supports_gradient_checkpointing = True
 
-    def __init__(self, config: RoBaTConfig):
-        super().__init__(config)
+    def __init__(self, config: RoBaTConfig, **kwargs):
+        super().__init__(config, **kwargs)
         self.config = config
 
     def _init_weights(self, module):
@@ -231,8 +231,8 @@ class RoBaTModel(RoBaTPreTrainedModel):
         config: RoBaTConfig
             - configuration for the model
     """
-    def __init__(self, config: RoBaTConfig):
-        super().__init__(config)
+    def __init__(self, config: RoBaTConfig, **kwargs):
+        super().__init__(config, **kwargs)
 
         self.multi_time_attn = MultiTimeAttention(
             value_dim=2,
@@ -417,8 +417,8 @@ class RoBaTForNextCyclePrediction(RoBaTPreTrainedModel):
         config: RoBaTConfig
             - configuration for the model
     """
-    def __init__(self, config: RoBaTConfig):
-        super().__init__(config)
+    def __init__(self, config: RoBaTConfig, **kwargs):
+        super().__init__(config, **kwargs)
         self.model = RoBaTModel(config)
 
         self.next_cycle_regressor = nn.Linear(config.embedding_dim, 1)
@@ -485,7 +485,7 @@ class RoBaTForTrajectoryPrediction(RoBaTPreTrainedModel):
         config: RoBaTConfig
             - configuration for the model
     """
-    def __init__(self, config: RoBaTConfig):
+    def __init__(self, config: RoBaTConfig, **kwargs):
         super().__init__(config)
         self.model = RoBaTModel(config)
         self.ode_integral = ODEIntegral(

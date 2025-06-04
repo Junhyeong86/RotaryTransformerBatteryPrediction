@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "robat"
+version = "0.1.0"
+description = "A package for predicting battery performance using rotary transformer models."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "" }
+authors = [
+    {name = "junhyeong lee", email = "jun686868@hanyang.ac.kr"}
+]
+
+dependencies = [
+    "torch",
+    "torchvision",
+    "torchaudio",
+    "transformers",
+    "accelerate",
+    "datasets",
+    "torchinfo",
+    "torchdiffeq",
+    "tensorboardX",
+    "matplotlib",
+]
+
+# TODO: Add optional dependencies if needed
+[project.optional-dependencies]
+
+[tool.setuptools.packages.find]
+include = ["robat*"]
+
+[project.scripts]
+robat-train = "robat.scripts.train:main"
