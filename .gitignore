@@ -27,5 +27,5 @@ ipython_config.py
 
 # log checkpoints
 *.log
-log/**/*
+log/
 *.tar
