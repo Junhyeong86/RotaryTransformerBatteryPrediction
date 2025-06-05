@@ -25,6 +25,9 @@ ipython_config.py
 /figures/*
 /_*
 
+# root shell scripts
+/*.sh
+
 # log checkpoints
 *.log
 log/
