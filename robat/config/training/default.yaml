@@ -8,7 +8,7 @@ training_args:
   per_device_eval_batch_size: 32
 
   # training
-  num_train_steps: -1 # -1 means use num_train_epochs
+  num_train_steps: 10000 # -1 means use num_train_epochs
   num_train_epochs: 3
   gradient_accumulation_steps: 1
 
@@ -32,7 +32,7 @@ callbacks:
     top_n: 1
   early_stopping_callback:
     _target_: "transformers.trainer_callback.EarlyStoppingCallback"
-    early_stopping_patience: 3
+    early_stopping_patience: 5
 
 ds:
   _target_: "robat.preprocess.ds_preprocess_for_training"
