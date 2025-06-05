@@ -31,6 +31,8 @@ def main(cfg: DictConfig) -> None:
     assert cfg.job_name == "train", "This script is only for training. Please use the correct job name."
 
     hydra_output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
+    # Log the configuration
+    OmegaConf.save(cfg, f"{hydra_output_dir}/config.yaml")
     for i in range(cfg.get("repeat", 1)):
         training_output_dir = os.path.join(hydra_output_dir, f"repeat={i+1}")
 
@@ -92,9 +94,6 @@ def main(cfg: DictConfig) -> None:
         logger.info(f"Training time: {training_time}")
         logger.info("Training completed")
         trainer.save_state()
-
-        # Log the configuration
-        OmegaConf.save(cfg, f"{training_output_dir}/config.yaml")
 
 # %%
 if __name__ == "__main__":

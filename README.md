@@ -1,6 +1,7 @@
 ## Install
 ```
-pip install "robat @ git+https://github.com/Junhyeong86/RotaryTransformerBatteryPrediction.git"
+pip install uv # for fast installation
+uv pip install "robat @ git+https://github.com/Junhyeong86/RotaryTransformerBatteryPrediction.git"
 ```
 
 ## Training yout own RoBaT model
