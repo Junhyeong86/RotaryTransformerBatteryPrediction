@@ -1,0 +1,7 @@
+from_pretrained: false
+
+# to load the best model from the previous training run
+pretrained_model_name_or_path: "best"  # use the best model from the training run
+model_search_dir: "./log/train/${model.model_purpose}"
+best_criterion: "discharge_capacity_mse"
+greater_is_better: false

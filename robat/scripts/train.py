@@ -2,6 +2,7 @@
 import os
 import time
 from datetime import timedelta
+from typing import Tuple, List
 
 import hydra
 from hydra.utils import instantiate
@@ -11,6 +12,9 @@ from transformers import (
     TrainingArguments,
     Trainer,
 )
+from safetensors.torch import load_model
+
+from torch import nn
 
 from torchinfo import summary
 
@@ -18,6 +22,36 @@ from robat.globals import MODELS_CONFIG_PATH
 from robat.logger import get_logger
 from robat.preprocess import collate_fn
 from robat.compute_metrics import compute_metrics
+from robat.utils.training_postprocess import get_eval_df, is_compatable_model_config
+from robat.utils.transformer_trainer_utils import get_model_ckpt
+
+def load_best_model(
+        model: nn.Module,
+        cfg: DictConfig,
+    ) -> Tuple[str, Tuple[List[str], List[str]]]:
+    """
+    Load the best model based on the configuration.
+    """
+    cfg_from_pretrained = cfg.model.from_pretrained
+    eval_df = get_eval_df(cfg_from_pretrained.model_search_dir)
+    ode_layer_check = (
+        (cfg.model.model_purpose == "trajectory_prediction") &
+        (cfg.model.config.loss_column == "discharge_capacity")
+    )
+    mask = eval_df["model.config"].apply(
+        lambda x: is_compatable_model_config(x, cfg.model.config, ode_layer_check=ode_layer_check)
+    )
+    eval_df = eval_df[mask].reset_index(drop=True)
+    if eval_df.empty:
+        raise ValueError("No best model found for the given configuration.")
+
+    if cfg_from_pretrained.greater_is_better:
+        best_model_idx = eval_df[f"eval_{cfg_from_pretrained.best_criterion}"].idxmax()
+    else:
+        best_model_idx = eval_df[f"eval_{cfg_from_pretrained.best_criterion}"].idxmin()
+    best_model_dirpath = eval_df.loc[best_model_idx, "dirpath"]
+    best_model_ckpt = get_model_ckpt(best_model_dirpath)
+    return best_model_ckpt, load_model(model, best_model_ckpt/"model.safetensors")
 
 # %%
 @hydra.main(version_base=None, config_path=str(MODELS_CONFIG_PATH), config_name="default")
@@ -28,11 +62,13 @@ def main(cfg: DictConfig) -> None:
     Args:
         cfg (DictConfig): Configuration object containing the training parameters.
     """
+
     assert cfg.job_name == "train", "This script is only for training. Please use the correct job name."
 
     hydra_output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
     # Log the configuration
     OmegaConf.save(cfg, f"{hydra_output_dir}/config.yaml")
+
     for i in range(cfg.get("repeat", 1)):
         training_output_dir = os.path.join(hydra_output_dir, f"repeat={i+1}")
 
@@ -40,6 +76,8 @@ def main(cfg: DictConfig) -> None:
         logger = get_logger(
             level="INFO",
             file_name=f"{hydra_output_dir}/log.log",
+            using_file_handler=True,
+            using_stream_handler=True,
         )
         logger.info("Starting training script...")
         logger.info(f"training_output_dir: {training_output_dir}")
@@ -53,6 +91,21 @@ def main(cfg: DictConfig) -> None:
         # initialize the model
         model = instantiate(cfg.model)
         logger.info(f"Model loaded")
+        cfg_from_pretrained = cfg.model.from_pretrained
+        if cfg_from_pretrained.from_pretrained and cfg_from_pretrained.pretrained_model_name_or_path == "best":
+            logger.info("Loading the best model based on evaluation results...")
+            best_model_ckpt, (missing, unexpected) = load_best_model(model, cfg)
+            logger.info(f"Best model loaded from: {best_model_ckpt}")
+            if missing:
+                logger.warning(f"Missing parameters during model loading: {missing}")
+            if unexpected:
+                logger.warning(f"Unexpected parameters during model loading: {unexpected}")
+        elif cfg_from_pretrained.from_pretrained and cfg_from_pretrained.pretrained_model_name_or_path != "best":
+            logger.info(f"Loading model from pretrained path: {cfg_from_pretrained.pretrained_model_name_or_path}")
+            model = model.from_pretrained(
+                cfg_from_pretrained.pretrained_model_name_or_path,
+                config=cfg.model.config,
+            )
 
         # set training arguments
         training_args = dict(cfg.training.training_args)

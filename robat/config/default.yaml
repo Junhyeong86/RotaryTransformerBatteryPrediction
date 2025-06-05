@@ -31,6 +31,7 @@ defaults:
   - logging: default
   - model: next_cycle_prediction
   - model/config: default
+  - model/from_pretrained: default
   - training: default
 
 job_name: "train"
