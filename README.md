@@ -39,6 +39,7 @@ robat-train --multirun\
 robat-train --multirun\
     training.training_args.num_train_steps=10000\
     training.training_args.learning_rate=5e-5,1e-5,5e-6\
+    model="trajectory_prediction"\
     model.config.loss_column="state_of_health"\
     model.config.time_transformer_num_layers=4\
     model.config.cycle_transformer_num_layers=8\
@@ -56,6 +57,7 @@ robat-train --multirun\
 robat-train --multirun\
     training.training_args.num_train_steps=10000\
     training.training_args.learning_rate=5e-6,1e-6,5e-7\
+    model="trajectory_prediction"\
     model.config.loss_column="discharge_capacity"\
     model.config.time_transformer_num_layers=4\
     model.config.cycle_transformer_num_layers=8\

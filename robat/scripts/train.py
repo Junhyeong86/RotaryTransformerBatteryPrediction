@@ -5,7 +5,7 @@ from datetime import timedelta
 from typing import Tuple, List
 
 import hydra
-from hydra.utils import instantiate
+from hydra.utils import instantiate, get_class
 from omegaconf import DictConfig, OmegaConf
 
 from transformers import (
@@ -13,7 +13,6 @@ from transformers import (
     Trainer,
 )
 from transformers.utils.logging import get_logger as transformers_get_logger
-from safetensors.torch import load_model
 
 from torch import nn
 
@@ -52,7 +51,7 @@ def get_best_model_ckpt(
         best_model_idx = eval_df[f"eval_{cfg_from_pretrained.best_criterion}"].idxmin()
     best_model_dirpath = eval_df.loc[best_model_idx, "dirpath"]
     best_model_ckpt = get_model_ckpt(best_model_dirpath)
-    return best_model_ckpt/"model.safetensors"
+    return best_model_ckpt
 
 # %%
 @hydra.main(version_base=None, config_path=str(MODELS_CONFIG_PATH), config_name="default")
@@ -74,7 +73,9 @@ def main(cfg: DictConfig) -> None:
     # to avoid loading the best model during repeat training, call best_model outside the for loop
     cfg_from_pretrained = cfg.model.from_pretrained
     if cfg_from_pretrained.from_pretrained and cfg_from_pretrained.pretrained_model_name_or_path == "best":
-        best_model_path = get_best_model_ckpt(cfg)
+        pretrained_model_name_or_path = get_best_model_ckpt(cfg)
+    elif cfg_from_pretrained.from_pretrained and cfg_from_pretrained.pretrained_model_name_or_path != "best":
+        pretrained_model_name_or_path = cfg_from_pretrained.pretrained_model_name_or_path
 
     for i in range(cfg.get("repeat", 1)):
         training_output_dir = os.path.join(hydra_output_dir, f"repeat={i+1}")
@@ -100,22 +101,17 @@ def main(cfg: DictConfig) -> None:
         logger.info(str(ds))
 
         # initialize the model
-        model = instantiate(cfg.model)
-        logger.info(f"Model loaded")
-        if cfg_from_pretrained.from_pretrained and cfg_from_pretrained.pretrained_model_name_or_path == "best":
-            logger.info("Loading the best model based on evaluation results...")
-            missing, unexpected = load_model(model, best_model_path)
-            logger.info(f"Best model loaded from: {best_model_path}")
-            if missing:
-                logger.warning(f"Missing parameters during model loading: {missing}")
-            if unexpected:
-                logger.warning(f"Unexpected parameters during model loading: {unexpected}")
-        elif cfg_from_pretrained.from_pretrained and cfg_from_pretrained.pretrained_model_name_or_path != "best":
-            logger.info(f"Loading model from pretrained path: {cfg_from_pretrained.pretrained_model_name_or_path}")
-            model = model.from_pretrained(
-                cfg_from_pretrained.pretrained_model_name_or_path,
-                config=cfg.model.config,
+        if not cfg_from_pretrained.from_pretrained:
+            logger.info("Loading model from scratch")
+            model = instantiate(cfg.model)
+        else:
+            logger.info(f"Loading model from pretrained path: {pretrained_model_name_or_path}")
+            model_class = get_class(cfg.model._target_)
+            model = model_class.from_pretrained(
+                pretrained_model_name_or_path,
+                config=instantiate(cfg.model.config),
             )
+        logger.info(f"Model loaded")
 
         # set training arguments
         training_args = dict(cfg.training.training_args)
