@@ -20,10 +20,16 @@ def get_logger(
         level: LOGGER_LEVELS = "INFO",
         file_name: Optional[str]=None,
         using_file_handler: bool=True,
-        using_stream_handler: bool=True
+        using_stream_handler: bool=True,
+        root_logger: bool=False
     ):
     # root logger settings
-    logger = getLogger("robat")
+    if root_logger:
+        # If root_logger is True, we use the root logger
+        logger = getLogger()
+    else:
+        # Otherwise, we create a new logger with the name "robat"
+        logger = getLogger("robat")
     logger.propagate = False # to prevent double logging on stream handler
     logger.setLevel(level)
 

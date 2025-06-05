@@ -12,6 +12,7 @@ from transformers import (
     TrainingArguments,
     Trainer,
 )
+from transformers.utils.logging import get_logger as transformers_get_logger
 from safetensors.torch import load_model
 
 from torch import nn
@@ -25,15 +26,15 @@ from robat.compute_metrics import compute_metrics
 from robat.utils.training_postprocess import get_eval_df, is_compatable_model_config
 from robat.utils.transformer_trainer_utils import get_model_ckpt
 
-def load_best_model(
-        model: nn.Module,
+def get_best_model_ckpt(
         cfg: DictConfig,
-    ) -> Tuple[str, Tuple[List[str], List[str]]]:
+    ) -> str:
     """
-    Load the best model based on the configuration.
+    Get the best model checkpoint based on the evaluation results.
     """
     cfg_from_pretrained = cfg.model.from_pretrained
     eval_df = get_eval_df(cfg_from_pretrained.model_search_dir)
+    assert not eval_df.empty, "No evaluation results found in the specified directory."
     ode_layer_check = (
         (cfg.model.model_purpose == "trajectory_prediction") &
         (cfg.model.config.loss_column == "discharge_capacity")
@@ -51,7 +52,7 @@ def load_best_model(
         best_model_idx = eval_df[f"eval_{cfg_from_pretrained.best_criterion}"].idxmin()
     best_model_dirpath = eval_df.loc[best_model_idx, "dirpath"]
     best_model_ckpt = get_model_ckpt(best_model_dirpath)
-    return best_model_ckpt, load_model(model, best_model_ckpt/"model.safetensors")
+    return best_model_ckpt/"model.safetensors"
 
 # %%
 @hydra.main(version_base=None, config_path=str(MODELS_CONFIG_PATH), config_name="default")
@@ -69,6 +70,12 @@ def main(cfg: DictConfig) -> None:
     # Log the configuration
     OmegaConf.save(cfg, f"{hydra_output_dir}/config.yaml")
 
+    # get the best model checkpoint if needed
+    # to avoid loading the best model during repeat training, call best_model outside the for loop
+    cfg_from_pretrained = cfg.model.from_pretrained
+    if cfg_from_pretrained.from_pretrained and cfg_from_pretrained.pretrained_model_name_or_path == "best":
+        best_model_path = get_best_model_ckpt(cfg)
+
     for i in range(cfg.get("repeat", 1)):
         training_output_dir = os.path.join(hydra_output_dir, f"repeat={i+1}")
 
@@ -78,10 +85,14 @@ def main(cfg: DictConfig) -> None:
             file_name=f"{hydra_output_dir}/log.log",
             using_file_handler=True,
             using_stream_handler=True,
+            root_logger=True,
         )
         logger.info("Starting training script...")
         logger.info(f"training_output_dir: {training_output_dir}")
         logger.info(OmegaConf.to_yaml(cfg))
+
+        transformers_logger = transformers_get_logger()
+        transformers_logger.propagate = True # to logging to the root logger
 
         # initialize the dataset
         ds = instantiate(cfg.training.ds)
@@ -91,11 +102,10 @@ def main(cfg: DictConfig) -> None:
         # initialize the model
         model = instantiate(cfg.model)
         logger.info(f"Model loaded")
-        cfg_from_pretrained = cfg.model.from_pretrained
         if cfg_from_pretrained.from_pretrained and cfg_from_pretrained.pretrained_model_name_or_path == "best":
             logger.info("Loading the best model based on evaluation results...")
-            best_model_ckpt, (missing, unexpected) = load_best_model(model, cfg)
-            logger.info(f"Best model loaded from: {best_model_ckpt}")
+            missing, unexpected = load_model(model, best_model_path)
+            logger.info(f"Best model loaded from: {best_model_path}")
             if missing:
                 logger.warning(f"Missing parameters during model loading: {missing}")
             if unexpected:
