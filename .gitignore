@@ -29,7 +29,7 @@ ipython_config.py
 /*.sh
 
 # evaluation results
-evaluation_results.xlsx
+evaluation_results.csv
 
 # log checkpoints
 *.log
