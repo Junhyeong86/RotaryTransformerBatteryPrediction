@@ -30,6 +30,10 @@ matplotlib.use("Agg")  # Use a non-interactive backend for matplotlib to acceler
 AVAILABLE_DS_NAMES = Literal[
     "Junhyeong86/battery-health-prediction",
 ]
+AVAILABLE_DS_COLUMNS = Literal[
+    "validation",
+    "test",
+]
 
 # %%
 def plot_label_vs_pred(
@@ -73,6 +77,7 @@ def plot_label_vs_pred(
 # %%
 def get_eval_ds_kwargs(
         ds_name: str,
+        eval_ds_column: AVAILABLE_DS_COLUMNS,
         split_cycle_len: int,
         config: Dict
     ) -> Dict[str, str]:
@@ -85,6 +90,7 @@ def get_eval_ds_kwargs(
         raise ValueError(f"Unsupported model architecture: {architecture}")
     return {
         "ds_name": ds_name,
+        "eval_ds_column": eval_ds_column,
         "model_purpose": model_purpose,
         "random_time_len": config["random_time_len"],
         "split_cycle_len": split_cycle_len,
@@ -99,7 +105,8 @@ def evaluate(
         split_cycle_len: int=256,
         save_fig: bool=True,
         save_eval_df: bool=True,
-        log_filename: str=None
+        log_filename: str=None,
+        eval_ds_column: Literal["validation", "test"]="test",
     ) -> pandas.DataFrame:
 
     # the below imports are imported later to accelerate the script loading time
@@ -141,6 +148,7 @@ def evaluate(
     for model_dir, model_ckpt in every_saved_models.items():
         ds_kwags = get_eval_ds_kwargs(
             ds_name=ds_name,
+            eval_ds_column=eval_ds_column,
             split_cycle_len=split_cycle_len,
             config=json.load(open(model_ckpt / "config.json"))
         )
@@ -154,24 +162,24 @@ def evaluate(
     eval_df = defaultdict(list)
     for model_dir, model_ckpt in every_saved_models.items():
         config = json.load(open(model_ckpt / "config.json"))
-        metric_filepath = model_dir / "metrics.json"
-        fig_filepath = model_dir / "label_vs_pred_discharge_capacity.png"
+        metric_filepath = model_dir / f"{eval_ds_column}_metrics.json"
+        fig_filepath = model_dir / f"{eval_ds_name}_label vs pred discharge capacity.png"
+        ds_kwargs = get_eval_ds_kwargs(
+            ds_name=ds_name,
+            eval_ds_column=eval_ds_column,
+            split_cycle_len=split_cycle_len,
+            config=config
+        )
+        eval_key = " ".join(f"{key}={value}" for key, value in ds_kwargs.items())
+        architecture = config.pop("architectures")[0]
 
         if os.path.exists(metric_filepath):
             metrics = json.load(open(metric_filepath))
             logger.info(f"Metrics: {metrics}")
             logger.info(f"Metrics already exist for {model_dir}, skipping evaluation.")
         else:
-            ds_kwargs = get_eval_ds_kwargs(
-                ds_name=ds_name,
-                split_cycle_len=split_cycle_len,
-                config=config
-            )
-            eval_key = " ".join(f"{key}={value}" for key, value in ds_kwargs.items())
             ds = every_eval_ds[eval_key]
-
-            model = getattr(models, config.pop("architectures")[0])
-            model = model.from_pretrained(
+            model = getattr(models, architecture).from_pretrained(
                 model_ckpt,
                 config=models.RoBaTConfig(**config),
             )
@@ -281,6 +289,13 @@ def main() -> None:
         help="Name of the dataset to use for evaluation. Default: Junhyeong86/battery-health-prediction",
     )
     parser.add_argument(
+        "--eval_ds_column",
+        type=str,
+        choices=get_args(AVAILABLE_DS_COLUMNS),
+        default="test",
+        help="Column of the dataset to use for evaluation. Default: test.",
+    )
+    parser.add_argument(
         "--split_cycle_len",
         type=int,
         default=256,
@@ -322,6 +337,7 @@ def main() -> None:
     evaluate(
         eval_root_dir=eval_root_dir,
         ds_name=ds_name,
+        eval_ds_column=args.eval_ds_column,
         split_cycle_len=split_cycle_len,
         save_fig=save_fig,
         save_eval_df=save_eval_df,

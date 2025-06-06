@@ -310,7 +310,7 @@ def ds_preprocess_for_eval(
         model_purpose: Literal["next_cycle_prediction", "trajectory_prediction"],
         random_time_len: int,
         split_cycle_len: int,
-        eval_ds_name: Literal["validation", "test"]="test",
+        eval_ds_column: Literal["validation", "test"]="test",
         padding_value: float = -100.0,
         padding_side: Literal["left", "right"] = "left",
         trajectory_pred_len: Optional[int] = None,
@@ -330,8 +330,8 @@ def ds_preprocess_for_eval(
         desc="Random time sampling",
     )
     eval_ds = {}
-    for i, eval_d in enumerate(ds[eval_ds_name]):
-        eval_key = f"{eval_d['ref']}/{eval_ds_name}/{i}"
+    for i, eval_d in enumerate(ds[eval_ds_column]):
+        eval_key = f"{eval_d['ref']}/{eval_ds_column}/{i}"
         eval_d = {key: [value] for key, value in eval_d.items()}
         eval_ds[eval_key] = Dataset.from_dict(eval_d)
     eval_ds = DatasetDict(eval_ds)

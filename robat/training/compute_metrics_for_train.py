@@ -1,4 +1,6 @@
 # %%
+from logging import getLogger
+
 import numpy
 
 import torch
@@ -30,6 +32,7 @@ def masked_r2_score(y_true, y_pred, mask):
         return 1 - (residual_sum_of_squares / total_sum_of_squares)
 
 def compute_metrics(eval_preds):
+    logger = getLogger(__name__ + ".compute_metrics")
     discharge_capacity = eval_preds.predictions[0]
     state_of_health = eval_preds.predictions[1]
 
@@ -73,12 +76,16 @@ def compute_metrics(eval_preds):
         mask,
     ) * 1e2 # to percentage R^2 score
 
-    return {
+    ret = {
         "discharge_capacity_mse": discharge_capacity_mse.item(),
         "discharge_capacity_mae": discharge_capacity_mae.item(),
         "state_of_health_mse": state_of_health_mse.item(),
         "state_of_health_mae": state_of_health_mae.item(),
         "r2": r2.item(),
     }
+
+    for k, value in ret.items():
+        logger.info(f"{k}: {value}")
+    return ret
 
 # %%
