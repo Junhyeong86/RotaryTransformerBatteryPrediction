@@ -66,9 +66,8 @@ def get_eval_df(log_dir: str) -> pandas.DataFrame:
     log_dir = log_dir if log_dir else "log"
     for root, _, files in os.walk(log_dir):
         root = Path(root)
-        if root.name.startswith("_"):
-            # skip hidden directories
-            continue
+        if any(str(p).startswith("_") for p in root.parts):
+            continue  # skip hidden directories
         for file in files:
             if file != "trainer_state.json":
                 continue

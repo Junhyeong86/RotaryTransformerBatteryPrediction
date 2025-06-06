@@ -28,6 +28,9 @@ ipython_config.py
 # root shell scripts
 /*.sh
 
+# evaluation results
+evaluation_results.xlsx
+
 # log checkpoints
 *.log
 log/

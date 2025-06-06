@@ -1,30 +1,10 @@
 hydra:
   run:
-    dir: "./log/${job_name}/${model.model_purpose}/${now:%Y-%m-%d_%H-%M-%S_%f}"
+    dir: "./log/${model.model_purpose}/${now:%Y-%m-%d_%H-%M-%S_%f}"
   sweep:
-    dir: "./log/${job_name}/${model.model_purpose}"
+    dir: "./log/${model.model_purpose}"
     subdir: "${now:%Y-%m-%d_%H-%M-%S_%f}"
-  job_logging:
-    version: 1
-    formatters:
-      simple:
-        format: "[%(levelname)s] [%(asctime)s] [%(name)s]: %(message)s"
-        datefmt: "%Y-%m-%d %H:%M:%S"
-    handlers:
-      console:
-        class: logging.StreamHandler
-        formatter: simple
-        stream: ext://sys.stdout
-      file:
-        class: logging.FileHandler
-        formatter: simple
-        filename: "${hydra.runtime.output_dir}/${logging.file_name}"
-    root:
-      level: INFO
-      handlers: 
-      - console
-      - file
-    disable_existing_loggers: false
+  job_logging: ${logging.job_logging}
 
 defaults:
   - _self_
@@ -34,5 +14,4 @@ defaults:
   - model/from_pretrained: default
   - training: default
 
-job_name: "train"
 repeat: 1

@@ -1,7 +1,7 @@
 training_args:
   # strategies
-  eval_strategy: "epoch"
-  save_strategy: "epoch"
+  eval_strategy: epoch
+  save_strategy: epoch
 
   # batch sizes
   per_device_train_batch_size: 32
@@ -14,29 +14,29 @@ training_args:
 
   # logging
   logging_steps: 1
-  report_to: "tensorboard"
+  report_to: tensorboard
 
   # optimizers
   warmup_steps: 1000
   weight_decay: 0.01
-  lr_scheduler_type: "cosine"
+  lr_scheduler_type: cosine
   learning_rate: 5e-5
 
   # metrics
   load_best_model_at_end: true
-  metric_for_best_model: "loss"
+  metric_for_best_model: loss
 
 callbacks:
   save_top_models_callback:
-    _target_: "robat.utils.transformer_trainer_utils.SaveTopModelsCallback"
+    _target_: robat.training.trainer_callback.SaveTopModelsCallback
     top_n: 1
   early_stopping_callback:
-    _target_: "transformers.trainer_callback.EarlyStoppingCallback"
+    _target_: transformers.trainer_callback.EarlyStoppingCallback
     early_stopping_patience: 5
 
 ds:
-  _target_: "robat.preprocess.ds_preprocess_for_training"
-  ds_name: "Junhyeong86/battery-health-prediction"
+  _target_: robat.training.datasets.ds_preprocess.ds_preprocess_for_train
+  ds_name: Junhyeong86/battery-health-prediction
   model_purpose: ${model.model_purpose}
   random_time_len: ${model.config.random_time_len}
   sampling_count: 16

@@ -1,1 +1,22 @@
 file_name: "log.log"
+job_logging:
+  version: 1
+  formatters:
+    simple:
+      format: "[%(levelname)s] [%(asctime)s] [%(name)s]: %(message)s"
+      datefmt: "%Y-%m-%d %H:%M:%S"
+  handlers:
+    console:
+      class: logging.StreamHandler
+      formatter: simple
+      stream: ext://sys.stdout
+    file:
+      class: logging.FileHandler
+      formatter: simple
+      filename: "${hydra.runtime.output_dir}/${logging.file_name}"
+  root:
+    level: INFO
+    handlers: 
+    - console
+    - file
+  disable_existing_loggers: false

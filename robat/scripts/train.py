@@ -20,10 +20,10 @@ from torchinfo import summary
 
 from robat.globals import MODELS_CONFIG_PATH
 from robat.logger import get_logger
-from robat.preprocess import collate_fn
-from robat.compute_metrics import compute_metrics
-from robat.utils.training_postprocess import get_eval_df, is_compatable_model_config
-from robat.utils.transformer_trainer_utils import get_model_ckpt
+from robat.training.preprocess_for_train import collate_fn
+from robat.training.compute_metrics_for_train import compute_metrics
+from robat.training.postprocess_for_train import get_eval_df, is_compatable_model_config
+from robat.training.trainer_callbacks import SaveTopModelsCallback
 
 # %%
 def get_best_model_ckpt(
@@ -51,7 +51,8 @@ def get_best_model_ckpt(
     else:
         best_model_idx = eval_df[f"eval_{cfg_from_pretrained.best_criterion}"].idxmin()
     best_model_dirpath = eval_df.loc[best_model_idx, "dirpath"]
-    best_model_ckpt = get_model_ckpt(best_model_dirpath)
+
+    best_model_ckpt = SaveTopModelsCallback.get_model_ckpt(best_model_dirpath)
     return best_model_ckpt
 
 # %%

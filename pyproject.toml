@@ -16,23 +16,27 @@ authors = [
 
 dependencies = [
     "torch",
-    "torchvision",
-    "torchaudio",
     "transformers",
-    "accelerate",
-    "datasets",
     "hydra-core",
-    "torchinfo",
     "torchdiffeq",
-    "tensorboardX",
-    "matplotlib",
 ]
 
 # TODO: Add optional dependencies if needed
 [project.optional-dependencies]
+train = [
+    "accelerate",
+    "datasets",
+    "torchinfo",
+    "tensorboardX",
+    "matplotlib",
+    "scipy",
+    "scikit-learn",
+    "openpyxl",
+]
 
 [tool.setuptools.packages.find]
 include = ["robat*"]
 
 [project.scripts]
 robat-train = "robat.scripts.train:main"
+robat-eval = "robat.scripts.evaluate:main"

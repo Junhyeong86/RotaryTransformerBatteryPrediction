@@ -130,24 +130,25 @@ class SaveTopModelsCallback(TrainerCallback):
             control.should_save = True
             args.output_dir = model_path
 
-# %%
-def get_model_ckpt(model_dirpath: str) -> str:
-    """
-    Get the model checkpoint from the directory.
-    """
-    pattern = re.compile(
-        r"/ckpt_epoch-\d+(\.\d+)?_[^/]+-\d+(\.\d+)?/checkpoint-\d+$"
-    )
-    _model_ckpt = []
-    for root, dirs, files in os.walk(model_dirpath):
-        for directory in dirs:
-            full_path = os.path.join(root, directory)
-            if pattern.search(full_path):
-                _model_ckpt.append(full_path)
+    # %%
+    @staticmethod
+    def get_model_ckpt(model_dirpath: str) -> str:
+        """
+        Get the model checkpoint from the directory.
+        """
+        pattern = re.compile(
+            r"/ckpt_epoch-\d+(\.\d+)?_[^/]+-\d+(\.\d+)?/checkpoint-\d+$"
+        )
+        _model_ckpt = []
+        for root, dirs, files in os.walk(model_dirpath):
+            for directory in dirs:
+                full_path = os.path.join(root, directory)
+                if pattern.search(full_path):
+                    _model_ckpt.append(full_path)
 
-    if len(_model_ckpt) > 1:
-        model_ckpt_str = "\n\t-" + "\n\t-".join(_model_ckpt)
-        raise ValueError(f"Multiple model checkpoints found: {model_ckpt_str}")
+        if len(_model_ckpt) > 1:
+            model_ckpt_str = "\n\t-" + "\n\t-".join(_model_ckpt)
+            raise ValueError(f"Multiple model checkpoints found: {model_ckpt_str}")
 
-    model_ckpt = _model_ckpt[0]
-    return Path(model_ckpt)
+        model_ckpt = _model_ckpt[0]
+        return Path(model_ckpt)

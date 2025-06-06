@@ -4,7 +4,13 @@ pip install uv # for fast installation
 uv pip install "robat @ git+https://github.com/Junhyeong86/RotaryTransformerBatteryPrediction.git"
 ```
 
-## Training yout own RoBaT model
+## Training your own RoBaT model
+### Install
+To train your own RoBaT model, you need to install the `robat` package with `train` extra.
+```sh
+pip install uv # for fast installation
+uv pip install "robat[train] @ git+https://github.com/Junhyeong86/RotaryTransformerBatteryPrediction.git"
+```
 ### SOH Prediction Optimization
 - **Pre-train a RoBaT model with SOH optimization**
 ```sh
@@ -66,4 +72,16 @@ robat-train --multirun\
     model.from_pretrained.from_pretrained=true\
     model.from_pretrained.pretrained_model_name_or_path="best"\
     repeat=1 # since loading from best pretrained model, no need to repeat
+```
+
+## Evaluate your own RoBaT model
+### Install
+To evaluate your own RoBaT model, you need to install the `robat` package with `train` extra.
+```sh
+pip install uv # for fast installation
+uv pip install "robat[train] @ git+https://github.com/Junhyeong86/RotaryTransformerBatteryPrediction.git"
+```
+### Evaluation
+```sh
+robat-eval ./log
 ```
