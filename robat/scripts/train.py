@@ -23,7 +23,7 @@ from robat.logger import get_logger
 from robat.training.preprocess_for_train import collate_fn
 from robat.training.compute_metrics_for_train import compute_metrics
 from robat.training.postprocess_for_train import get_eval_df, is_compatable_model_config
-from robat.training.trainer_callbacks import SaveTopModelsCallback
+from robat.training.trainer_callback import SaveTopModelsCallback
 
 # %%
 def get_best_model_ckpt(
@@ -64,8 +64,6 @@ def main(cfg: DictConfig) -> None:
     Args:
         cfg (DictConfig): Configuration object containing the training parameters.
     """
-
-    assert cfg.job_name == "train", "This script is only for training. Please use the correct job name."
 
     hydra_output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
     # Log the configuration

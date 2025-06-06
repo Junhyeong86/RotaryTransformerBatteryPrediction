@@ -35,7 +35,7 @@ callbacks:
     early_stopping_patience: 5
 
 ds:
-  _target_: robat.training.datasets.ds_preprocess.ds_preprocess_for_train
+  _target_: robat.datasets.ds_preprocess.ds_preprocess_for_train
   ds_name: Junhyeong86/battery-health-prediction
   model_purpose: ${model.model_purpose}
   random_time_len: ${model.config.random_time_len}

@@ -106,7 +106,7 @@ def evaluate(
     from robat.logger import get_logger
     from robat.datasets.ds_preprocess import ds_preprocess_for_eval
     from robat import models
-    from robat.training.trainer_callbacks import SaveTopModelsCallback
+    from robat.training.trainer_callback import SaveTopModelsCallback
 
     from sklearn.metrics import (
         root_mean_squared_error,
