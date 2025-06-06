@@ -259,8 +259,8 @@ def evaluate(
 
     eval_df = pandas.DataFrame(eval_df)
     if save_eval_df:
-        eval_df.to_excel("evaluation_results.xlsx", index=False)
-        logger.info(f"Evaluation results saved to evaluation_results.xlsx")
+        eval_df.to_csv("evaluation_results.csv", index=False)
+        logger.info(f"Evaluation results saved to evaluation_results.csv")
     logger.info("Evaluation completed")
     return eval_df
 
