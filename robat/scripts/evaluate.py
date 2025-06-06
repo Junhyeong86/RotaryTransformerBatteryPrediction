@@ -163,7 +163,7 @@ def evaluate(
     for model_dir, model_ckpt in every_saved_models.items():
         config = json.load(open(model_ckpt / "config.json"))
         metric_filepath = model_dir / f"{eval_ds_column}_metrics.json"
-        fig_filepath = model_dir / f"{eval_ds_name}_label vs pred discharge capacity.png"
+        fig_filepath = model_dir / f"{eval_ds_column}_label vs pred discharge capacity.png"
         ds_kwargs = get_eval_ds_kwargs(
             ds_name=ds_name,
             eval_ds_column=eval_ds_column,
