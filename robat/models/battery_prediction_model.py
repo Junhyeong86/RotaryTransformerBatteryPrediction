@@ -46,6 +46,8 @@ class RoBaTOutput(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
     discharge_capacity: Optional[torch.FloatTensor] = None
     state_of_health: Optional[torch.FloatTensor] = None
+    label_discharge_capacity: Optional[torch.FloatTensor] = None
+    label_state_of_health: Optional[torch.FloatTensor] = None
     last_hidden_state: Optional[torch.FloatTensor] = None
     multi_time_attn_weights: Optional[List[torch.FloatTensor]] = None
     time_level_rotary_attn_weights: Optional[List[torch.FloatTensor]] = None
@@ -402,6 +404,8 @@ class RoBaTModel(RoBaTPreTrainedModel):
             loss=None,
             discharge_capacity=None,
             state_of_health=None,
+            label_discharge_capacity=label_discharge_capacity,
+            label_state_of_health=label_state_of_health,
             last_hidden_state=x,
             multi_time_attn_weights=multi_time_attn_weights,
             time_level_rotary_attn_weights=time_level_rotary_attn_weights,
@@ -471,6 +475,8 @@ class RoBaTForNextCyclePrediction(RoBaTPreTrainedModel):
             loss=loss,
             discharge_capacity=ret_discharge_capacity,
             state_of_health=ret_state_of_health,
+            label_discharge_capacity=label_discharge_capacity,
+            label_state_of_health=label_state_of_health,
             multi_time_attn_weights=output.multi_time_attn_weights,
             time_level_rotary_attn_weights=output.time_level_rotary_attn_weights,
             cycle_level_rotary_attn_weights=output.cycle_level_rotary_attn_weights,
@@ -554,6 +560,8 @@ class RoBaTForTrajectoryPrediction(RoBaTPreTrainedModel):
             loss=loss,
             discharge_capacity=ret_discharge_capacity,
             state_of_health=ret_state_of_health,
+            label_discharge_capacity=label_discharge_capacity,
+            label_state_of_health=label_state_of_health,
             multi_time_attn_weights=output.multi_time_attn_weights,
             time_level_rotary_attn_weights=output.time_level_rotary_attn_weights,
             cycle_level_rotary_attn_weights=output.cycle_level_rotary_attn_weights,

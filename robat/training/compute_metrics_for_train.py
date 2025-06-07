@@ -5,7 +5,9 @@ import numpy
 
 import torch
 import torch.nn.functional as F
+from ..models.battery_prediction_model import RoBaTOutput
 
+# %%
 def masked_r2_score(y_true, y_pred, mask):
     """
     Compute the masked R^2 score.
@@ -31,13 +33,13 @@ def masked_r2_score(y_true, y_pred, mask):
     else:
         return 1 - (residual_sum_of_squares / total_sum_of_squares)
 
-def compute_metrics(eval_preds):
+def compute_metrics(robat_output: RoBaTOutput):
     logger = getLogger(__name__ + ".compute_metrics")
-    discharge_capacity = eval_preds.predictions[0]
-    state_of_health = eval_preds.predictions[1]
+    discharge_capacity = robat_output.discharge_capacity
+    state_of_health = robat_output.state_of_health
 
-    label_discharge_capacity = eval_preds.label_ids[0]
-    label_state_of_health = eval_preds.label_ids[1]
+    label_discharge_capacity = robat_output.label_discharge_capacity
+    label_state_of_health = robat_output.label_state_of_health
     label_discharge_capacity = numpy.array(label_discharge_capacity)
 
     mask = numpy.isclose(label_discharge_capacity, -100)

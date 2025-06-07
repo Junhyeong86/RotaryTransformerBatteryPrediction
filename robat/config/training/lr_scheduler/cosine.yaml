@@ -1,0 +1,3 @@
+_target_: transformers.get_cosine_schedule_with_warmup
+num_warmup_steps: 1000
+num_training_steps: ${training.trainer_args.num_train_steps}

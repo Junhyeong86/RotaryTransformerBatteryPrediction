@@ -8,10 +8,6 @@ import hydra
 from hydra.utils import instantiate, get_class
 from omegaconf import DictConfig, OmegaConf
 
-from transformers import (
-    TrainingArguments,
-    Trainer,
-)
 from transformers.utils.logging import get_logger as transformers_get_logger
 
 from torch import nn
@@ -20,10 +16,12 @@ from torchinfo import summary
 
 from robat.globals import MODELS_CONFIG_PATH
 from robat.logger import get_logger
-from robat.training.preprocess_for_train import collate_fn
 from robat.training.compute_metrics_for_train import compute_metrics
 from robat.training.postprocess_for_train import get_eval_df, is_compatable_model_config
-from robat.training.trainer_callback import SaveTopModelsCallback
+from robat.training.trainer_base import (
+    RoBaTTrainer,
+    SaveTopModelsCallback
+)
 
 # %%
 def get_best_model_ckpt(
@@ -114,35 +112,30 @@ def main(cfg: DictConfig) -> None:
         logger.info(f"Model loaded")
 
         # set training arguments
-        training_args = dict(cfg.training.training_args)
-        batch_size = training_args["per_device_train_batch_size"]
-        num_training_steps = training_args.pop("num_train_steps")
-        if num_training_steps > 0:
-            training_args["num_train_epochs"] = num_training_steps / (len(ds["train"]) // batch_size + 1)
-        training_args["output_dir"] = training_output_dir
-        training_args = TrainingArguments(**training_args)
-        logger.info(f"Training arguments: {training_args}")
+        trainer_args = instantiate(cfg.training.trainer_args, output_dir=training_output_dir)
+        logger.info(f"Trainer arguments: {trainer_args}")
+
+        # set the optimizer and scheduler
+        optimizer = instantiate(cfg.training.optimizer, params=model.parameters())
+        lr_scheduler = instantiate(cfg.training.lr_scheduler, optimizer=optimizer)
 
         # Create the Trainer instance
         callbacks = instantiate(cfg.training.callbacks)
         callbacks = [cb for name, cb in callbacks.items()]
-        trainer = Trainer(
+        trainer = RoBaTTrainer(
+            trainer_args=trainer_args,
             model=model,
-            train_dataset=ds["train"],
-            eval_dataset=ds["validation"],
-            data_collator=collate_fn,
-            args=training_args,
-            callbacks=callbacks,
+            optimizer=optimizer,
+            lr_scheduler=lr_scheduler,
+            train_dataloader=ds["train"],
+            eval_dataloader=ds["validation"],
             compute_metrics=compute_metrics,
+            callbacks=callbacks,
         )
 
         # summarize the model
-        device = next(model.parameters()).device
-        input_data = collate_fn([ds["train"][i] for i in range(batch_size)])
-        input_data = {k: v.to(device) for k, v in input_data.items() if "label" not in k}
-        model_summary = summary(model, input_data=input_data, verbose=0)
         logger.info(f"Model summary:")
-        logger.info(str(model_summary))
+        logger.info(str(trainer.summary()))
 
         # %%
         start_time = time.time()

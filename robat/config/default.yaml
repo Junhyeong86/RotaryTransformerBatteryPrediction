@@ -12,6 +12,10 @@ defaults:
   - model: next_cycle_prediction
   - model/config: default
   - model/from_pretrained: default
-  - training: default
+  - training/trainer_args: default
+  - training/ds: default
+  - training/callbacks: default
+  - training/lr_scheduler: cosine
+  - training/optimizer: adamw
 
 repeat: 1
