@@ -217,7 +217,7 @@ class SaveTopModelCallback(RoBaTTrainerCallback):
             f"Current model: {model_path}\n"
             f"Worst saved model: {worst_model}\n"
             f"Current metric: {metric}\n"
-            f"Worst savedd model metric: {worst_metric}\n"
+            f"Worst saved model metric: {worst_metric}\n"
             f"Is model better: {is_model_better}"
         )
 
