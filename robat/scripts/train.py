@@ -20,6 +20,13 @@ from robat.training.trainer_base import (
     RoBaTTrainer,
     SaveTopModelCallback
 )
+# %%
+OmegaConf.register_new_resolver(
+    "eval",
+    eval,
+    use_cache=False
+)
+
 
 # %%
 def get_best_model_ckpt(

@@ -1,0 +1,5 @@
+_target_: transformers.get_polynomial_decay_schedule_with_warmup
+num_warmup_steps: 1000
+num_training_steps: ${training.trainer_args.num_train_steps}
+lr_end: ${eval:${training.optimizer.lr} * 1e-2}
+power: 3
