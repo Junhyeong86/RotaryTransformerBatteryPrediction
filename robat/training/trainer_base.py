@@ -32,6 +32,7 @@ from transformers import PreTrainedModel, SchedulerType
 from accelerate import Accelerator
 
 from ..models.battery_prediction_model import RoBaTOutput
+from ..utils.json_encoder import JsonNumpyEncoder
 
 # %%
 MIXED_PRECISION_TYPE = Literal[
@@ -162,10 +163,10 @@ class RoBaTTrainerCallback:
         pass
 
 # %%
-class SaveTopModelsCallback(RoBaTTrainerCallback):
-    def __init__(self, top_n: int=3):
+# allow only one top model to be saved, but can be extended to save top_n models
+class SaveTopModelCallback(RoBaTTrainerCallback):
+    def __init__(self): 
         super().__init__()
-        self.top_n = top_n
         self.best_models: dict[str, float] = {} # model_path: metric
 
     def on_init_end(
@@ -223,7 +224,7 @@ class SaveTopModelsCallback(RoBaTTrainerCallback):
         if not is_model_better:
             return
 
-        if len(self.best_models) >= self.top_n and is_model_better:
+        if len(self.best_models) >= 1 and is_model_better: # change 1 to top_n is available
             # remove the worst model
             if worst_model == self.dummy_model_path:
                 pass
@@ -233,7 +234,7 @@ class SaveTopModelsCallback(RoBaTTrainerCallback):
                 os.remove(worst_model)
             del self.best_models[worst_model]
 
-        if len(self.best_models) < self.top_n:
+        if len(self.best_models) < 1: # change 1 to top_n is available
             self.best_models[model_path] = metric
             state.should_save = True
             args.output_dir = model_path
@@ -246,7 +247,7 @@ class SaveTopModelsCallback(RoBaTTrainerCallback):
         Get the model checkpoint from the directory.
         """
         pattern = re.compile(
-            r"/ckpt_epoch-\d+(\.\d+)?_[^/]+-\d+(\.\d+)?/checkpoint-\d+$"
+            r"/ckpt_step-\d+(\.\d+)?_[^/]+-\d+(\.\d+)?$"
         )
         _model_ckpt = []
         for root, dirs, files in os.walk(model_dirpath):
@@ -321,7 +322,7 @@ class RoBaTTrainer:
             os.makedirs(self.trainer_args.output_dir)
 
         if self.accelerator.is_main_process:
-            self.accelerator.init_trackers("RoBaTTrainer:")
+            self.accelerator.init_trackers("RoBaTTrainer")
 
         model_kwargs = list(inspect.signature(model.forward).parameters.keys())
         if isinstance(train_dataloader, Dataset):
@@ -400,7 +401,7 @@ class RoBaTTrainer:
                 self.state.global_step = _global_step + 1 # to prevent double counting, add to copied global_step
                 progress_bar_postfix = {
                     "loss": self.state.loss,
-                    "learning_rate": self.state.learning_rate,
+                    "learning_rate": f"{self.state.learning_rate:.2e}",
                 }
                 progress_bar.set_postfix(progress_bar_postfix)
                 self.every_state.append(self.state)
@@ -536,12 +537,15 @@ class RoBaTTrainer:
                         value = value.detach().cpu().numpy()
                     every_outputs[key].append(value)
                 progress_bar.update(1)
-        every_outputs["loss"] = numpy.mean(every_outputs["loss"])
+        every_outputs = {k: numpy.vstack(v) for k, v in every_outputs.items()}
+        every_outputs["loss"] = every_outputs["loss"].mean()
         metrics = self.compute_metrics(RoBaTOutput(**every_outputs))
         eval_state.metrics = {f"eval/{k}": v for k, v in metrics.items()}
+        eval_state.metrics["eval/loss"] = every_outputs["loss"]
         eval_state.loss = every_outputs["loss"]
+
         if self.accelerator.is_main_process:
-            self.accelerator.log(metrics, step=eval_state.global_step)
+            self.accelerator.log(eval_state.metrics, step=eval_state.global_step)
 
         progress_bar_postfix = dict(
             (key.replace("eval/", ""), value)
@@ -552,13 +556,14 @@ class RoBaTTrainer:
             for key in progress_bar_postfix
         ])
         duration = time.time() - start_time
+        progress_bar.set_postfix(**progress_bar_postfix)
+        progress_bar.close()
+
         self.logger.info(
             f"Evaluation on step {self.state.global_step}\n"
             f"with metrics: {logger_metric_str}\n"
             f"with duration: {timedelta(seconds=duration)}"
         )
-        progress_bar.set_postfix(**progress_bar_postfix)
-        progress_bar.close()
         return eval_state
 
     def save_model(self, model_path: str):
@@ -582,9 +587,19 @@ class RoBaTTrainer:
 
     def save_state(self, state_dir: str):
         with open(os.path.join(state_dir, "trainer_state.json"), "w") as f:
-            json.dump([s.__dict__ for s in self.every_state], f, indent=4)
+            json.dump(
+                [s.__dict__ for s in self.every_state],
+                f,
+                indent=4,
+                cls=JsonNumpyEncoder,
+            )
         with open(os.path.join(state_dir, "trainer_eval_state.json"), "w") as f:
-            json.dump([s.__dict__ for s in self.every_eval_state], f, indent=4)
+            json.dump(
+                [s.__dict__ for s in self.every_eval_state],
+                f,
+                indent=4,
+                cls=JsonNumpyEncoder,
+            )
 
     def _run_callbacks(
             self,

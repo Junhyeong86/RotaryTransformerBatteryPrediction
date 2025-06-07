@@ -8,8 +8,6 @@ import hydra
 from hydra.utils import instantiate, get_class
 from omegaconf import DictConfig, OmegaConf
 
-from transformers.utils.logging import get_logger as transformers_get_logger
-
 from torch import nn
 
 from torchinfo import summary
@@ -20,7 +18,7 @@ from robat.training.compute_metrics_for_train import compute_metrics
 from robat.training.postprocess_for_train import get_eval_df, is_compatable_model_config
 from robat.training.trainer_base import (
     RoBaTTrainer,
-    SaveTopModelsCallback
+    SaveTopModelCallback
 )
 
 # %%
@@ -45,12 +43,12 @@ def get_best_model_ckpt(
         raise ValueError("No best model found for the given configuration.")
 
     if cfg_from_pretrained.greater_is_better:
-        best_model_idx = eval_df[f"eval_{cfg_from_pretrained.best_criterion}"].idxmax()
+        best_model_idx = eval_df[f"eval/{cfg_from_pretrained.best_criterion}"].idxmax()
     else:
-        best_model_idx = eval_df[f"eval_{cfg_from_pretrained.best_criterion}"].idxmin()
+        best_model_idx = eval_df[f"eval/{cfg_from_pretrained.best_criterion}"].idxmin()
     best_model_dirpath = eval_df.loc[best_model_idx, "dirpath"]
 
-    best_model_ckpt = SaveTopModelsCallback.get_model_ckpt(best_model_dirpath)
+    best_model_ckpt = SaveTopModelCallback.get_model_ckpt(best_model_dirpath)
     return best_model_ckpt
 
 # %%
@@ -75,28 +73,25 @@ def main(cfg: DictConfig) -> None:
     elif cfg_from_pretrained.from_pretrained and cfg_from_pretrained.pretrained_model_name_or_path != "best":
         pretrained_model_name_or_path = cfg_from_pretrained.pretrained_model_name_or_path
 
+    # call the logger
+    logger = get_logger(
+        level=cfg.logging.level,
+        file_name=f"{hydra_output_dir}/log.log",
+        using_file_handler=True,
+        using_stream_handler=True,
+    )
+    logger.info(OmegaConf.to_yaml(cfg))
+
+    # initialize the dataset
+    ds = instantiate(cfg.training.ds)
+    logger.info(f"Dataset loaded")
+    logger.info(str(ds))
+
     for i in range(cfg.get("repeat", 1)):
         training_output_dir = os.path.join(hydra_output_dir, f"repeat={i+1}")
 
-        # call the logger
-        logger = get_logger(
-            level="INFO",
-            file_name=f"{hydra_output_dir}/log.log",
-            using_file_handler=True,
-            using_stream_handler=True,
-            root_logger=True,
-        )
         logger.info("Starting training script...")
         logger.info(f"training_output_dir: {training_output_dir}")
-        logger.info(OmegaConf.to_yaml(cfg))
-
-        transformers_logger = transformers_get_logger()
-        transformers_logger.propagate = True # to logging to the root logger
-
-        # initialize the dataset
-        ds = instantiate(cfg.training.ds)
-        logger.info(f"Dataset loaded")
-        logger.info(str(ds))
 
         # initialize the model
         if not cfg_from_pretrained.from_pretrained:
@@ -145,7 +140,8 @@ def main(cfg: DictConfig) -> None:
         training_time = timedelta(seconds=end_time - start_time)
         logger.info(f"Training time: {training_time}")
         logger.info("Training completed")
-        trainer.save_state()
+        trainer.save_state(training_output_dir)
+        logger.info(f"Training state saved to {training_output_dir}")
 
 # %%
 if __name__ == "__main__":

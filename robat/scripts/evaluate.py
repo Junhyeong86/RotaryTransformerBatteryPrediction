@@ -113,7 +113,7 @@ def evaluate(
     from robat.logger import get_logger
     from robat.datasets.ds_preprocess import ds_preprocess_for_eval
     from robat import models
-    from robat.training.trainer_callback import SaveTopModelsCallback
+    from robat.training.trainer_base import SaveTopModelCallback
 
     from sklearn.metrics import (
         root_mean_squared_error,
@@ -126,20 +126,18 @@ def evaluate(
         file_name=log_filename,
         using_file_handler=True if not log_filename is None else False,
         using_stream_handler=True,
-        root_logger=False,
     )
 
     every_saved_models: Dict[Path, Path] = {}
     for root, _, files in os.walk(eval_root_dir):
         root = Path(root)
+        if re.search(r"repeat=(\d+)", str(root.name)) is None:
+            continue
         if any(p.startswith("_") for p in root.parts):
             continue  # skip hidden directories
-        for file in files:
-            if file != "trainer_state.json":
-                continue
-            if re.search(r"repeat=(\d+)", str(root.name)) is None:
-                continue
-            every_saved_models[root] = SaveTopModelsCallback.get_model_ckpt(root)
+        if not "trainer_state.json" in files:
+            continue # skip directories if training is not terminated
+        every_saved_models[root] = SaveTopModelCallback.get_model_ckpt(root)
     if not every_saved_models:
         raise ValueError(f"No saved models found in {eval_root_dir}")
     logger.info(f"Found {len(every_saved_models)} saved models in {eval_root_dir}")

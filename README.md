@@ -15,8 +15,8 @@ uv pip install "robat[train] @ git+https://github.com/Junhyeong86/RotaryTransfor
 - **Pre-train a RoBaT model with SOH optimization**
 ```sh
 robat-train --multirun\
-    training.training_args.num_train_steps=10000\
-    training.training_args.learning_rate=5e-5,1e-5,5e-6\
+    training.trainer_args.num_train_steps=10000\
+    training.optimizer.lr=5e-5,1e-5,5e-6\
     model.config.loss_column="state_of_health"\
     model.config.time_transformer_num_layers=4\
     model.config.cycle_transformer_num_layers=8\
@@ -27,8 +27,8 @@ robat-train --multirun\
 - To stabilize the training, we use a smaller learning rate than the SOH optimization.
 ```sh
 robat-train --multirun\
-    training.training_args.num_train_steps=10000\
-    training.training_args.learning_rate=5e-6,1e-6,5e-7\
+    training.trainer_args.num_train_steps=10000\
+    training.optimizer.lr=5e-6,1e-6,5e-7\
     model.config.loss_column="discharge_capacity"\
     model.config.time_transformer_num_layers=4\
     model.config.cycle_transformer_num_layers=8\
@@ -43,8 +43,8 @@ robat-train --multirun\
 - Unlike the SOH further pre-training, this fine-tuning is done with repeat=3 to get the best model. Because there is no ode layers in the SOH optimized model, ode layers are randomly initialized which means repeat is needed to get the best model.
 ```sh
 robat-train --multirun\
-    training.training_args.num_train_steps=10000\
-    training.training_args.learning_rate=5e-5,1e-5,5e-6\
+    training.trainer_args.num_train_steps=10000\
+    training.optimizer.lr=5e-5,1e-5,5e-6\
     model="trajectory_prediction"\
     model.config.loss_column="state_of_health"\
     model.config.time_transformer_num_layers=4\
@@ -61,8 +61,8 @@ robat-train --multirun\
 - To stabilize the training, we use a smaller learning rate than the trajectory prediction optimization.
 ```sh
 robat-train --multirun\
-    training.training_args.num_train_steps=10000\
-    training.training_args.learning_rate=5e-6,1e-6,5e-7\
+    training.trainer_args.num_train_steps=10000\
+    training.optimizer.lr=5e-6,1e-6,5e-7\
     model="trajectory_prediction"\
     model.config.loss_column="discharge_capacity"\
     model.config.time_transformer_num_layers=4\

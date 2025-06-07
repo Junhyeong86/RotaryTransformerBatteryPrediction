@@ -2,5 +2,4 @@ early_stopping_callback:
   _target_: robat.training.trainer_base.EarlyStoppingCallback
   patience: 5
 save_top_models_callback:
-  _target_: robat.training.trainer_base.SaveTopModelsCallback
-  top_n: 1
+  _target_: robat.training.trainer_base.SaveTopModelCallback

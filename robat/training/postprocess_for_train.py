@@ -69,18 +69,16 @@ def get_eval_df(log_dir: str) -> pandas.DataFrame:
         if any(str(p).startswith("_") for p in root.parts):
             continue  # skip hidden directories
         for file in files:
-            if file != "trainer_state.json":
+            if file != "trainer_eval_state.json":
                 continue
             if re.search(r"repeat=(\d+)", str(root.name)) is None:
                 continue
-            trainer_state = json.load(open(root/file))
+            trainer_eval_state = json.load(open(root/file))
             cfg_path = root.resolve().parents[0] / "config.yaml"
             cfg = OmegaConf.load(cfg_path)
-            for log in trainer_state["log_history"]:
-                if not "eval_loss" in log:
-                    continue
+            for log in trainer_eval_state:
                 eval_df["dirpath"].append(str(root))
-                for key, value in log.items():
+                for key, value in log["metrics"].items():
                     eval_df[key].append(value)
                 eval_df["model.config"].append(str(cfg.model.config))
                 eval_df["model.model_purpose"].append(cfg.model.model_purpose)

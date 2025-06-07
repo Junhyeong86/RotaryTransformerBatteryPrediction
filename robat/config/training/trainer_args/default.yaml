@@ -1,7 +1,7 @@
 _target_: robat.training.trainer_base.RoBaTTrainerArguments
 # training
 num_train_steps: 10000
-eval_steps: 100
+eval_steps: 200
 logging_steps: 10
 per_device_train_batch_size: 32
 per_device_eval_batch_size: 32

@@ -21,9 +21,8 @@ def get_logger(
         file_name: Optional[str]=None,
         using_file_handler: bool=True,
         using_stream_handler: bool=True,
-        root_logger: bool=False
     ):
-    logger = getLogger("robat")
+    logger = getLogger(__name__.split(".")[0])  # Get the root logger
     logger.propagate = False # to prevent double logging on stream handler
     logger.setLevel(level)
 

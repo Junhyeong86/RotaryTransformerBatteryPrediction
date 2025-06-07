@@ -1,4 +1,5 @@
 file_name: "log.log"
+level: INFO
 job_logging:
   version: 1
   formatters:
@@ -15,7 +16,7 @@ job_logging:
       formatter: simple
       filename: "${hydra.runtime.output_dir}/${logging.file_name}"
   root:
-    level: INFO
+    level: "${logging.level}"
     handlers: 
     - console
     - file

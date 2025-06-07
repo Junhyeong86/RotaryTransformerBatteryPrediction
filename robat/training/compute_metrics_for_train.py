@@ -34,7 +34,6 @@ def masked_r2_score(y_true, y_pred, mask):
         return 1 - (residual_sum_of_squares / total_sum_of_squares)
 
 def compute_metrics(robat_output: RoBaTOutput):
-    logger = getLogger(__name__ + ".compute_metrics")
     discharge_capacity = robat_output.discharge_capacity
     state_of_health = robat_output.state_of_health
 
@@ -85,9 +84,6 @@ def compute_metrics(robat_output: RoBaTOutput):
         "state_of_health_mae": state_of_health_mae.item(),
         "r2": r2.item(),
     }
-
-    for k, value in ret.items():
-        logger.info(f"{k}: {value}")
     return ret
 
 # %%
