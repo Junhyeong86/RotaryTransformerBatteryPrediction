@@ -13,10 +13,12 @@ uv pip install "robat[train] @ git+https://github.com/Junhyeong86/RotaryTransfor
 ```
 ### SOH Prediction Optimization
 - **Pre-train a RoBaT model with SOH optimization**
+- to fasten the training, we used the `training/lr_scheduler="polynominal"`.
 ```sh
 robat-train --multirun\
+    training/lr_scheduler="polynominal"\
     training.trainer_args.num_train_steps=10000\
-    training.optimizer.lr=5e-5,1e-5,5e-6\
+    training.optimizer.lr=5e-5\
     model.config.loss_column="state_of_health"\
     model.config.time_transformer_num_layers=4\
     model.config.cycle_transformer_num_layers=8\
@@ -28,7 +30,7 @@ robat-train --multirun\
 ```sh
 robat-train --multirun\
     training.trainer_args.num_train_steps=10000\
-    training.optimizer.lr=5e-6,1e-6,5e-7\
+    training.optimizer.lr=1e-6\
     model.config.loss_column="discharge_capacity"\
     model.config.time_transformer_num_layers=4\
     model.config.cycle_transformer_num_layers=8\
@@ -44,13 +46,13 @@ robat-train --multirun\
 ```sh
 robat-train --multirun\
     training.trainer_args.num_train_steps=10000\
-    training.optimizer.lr=5e-5,1e-5,5e-6\
+    training.optimizer.lr=5e-5\
     model="trajectory_prediction"\
     model.config.loss_column="state_of_health"\
     model.config.time_transformer_num_layers=4\
     model.config.cycle_transformer_num_layers=8\
     model.config.ode_prediction_len=128\
-    model.config.ode_func_num_layers=2,4\
+    model.config.ode_func_num_layers=4\
     model.from_pretrained.from_pretrained=true\
     model.from_pretrained.model_search_dir="./log/train/next_cycle_prediction"\
     model.from_pretrained.pretrained_model_name_or_path="best"\
@@ -62,13 +64,13 @@ robat-train --multirun\
 ```sh
 robat-train --multirun\
     training.trainer_args.num_train_steps=10000\
-    training.optimizer.lr=5e-6,1e-6,5e-7\
+    training.optimizer.lr=1e-6\
     model="trajectory_prediction"\
     model.config.loss_column="discharge_capacity"\
     model.config.time_transformer_num_layers=4\
     model.config.cycle_transformer_num_layers=8\
     model.config.ode_prediction_len=128\
-    model.config.ode_func_num_layers=2,4\
+    model.config.ode_func_num_layers=4\
     model.from_pretrained.from_pretrained=true\
     model.from_pretrained.pretrained_model_name_or_path="best"\
     repeat=1 # since loading from best pretrained model, no need to repeat
