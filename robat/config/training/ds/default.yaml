@@ -4,6 +4,8 @@ model_purpose: ${model.model_purpose}
 random_time_len: ${model.config.random_time_len}
 sampling_count: 16
 split_cycle_len: 256
+interpolate_cycle: true
+interpolate_soh_threshold: 0.005
 padding_value: ${model.config.padding_value}
 padding_side: ${model.config.padding_side}
 trajectory_pred_len: ${model.config.ode_prediction_len}

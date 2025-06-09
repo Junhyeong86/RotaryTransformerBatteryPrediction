@@ -3,6 +3,7 @@ from collections import defaultdict
 from typing import Literal, Optional, List, Dict
 
 import numpy
+from scipy.interpolate import interp1d
 
 from datasets import (
     DatasetDict,
@@ -15,6 +16,7 @@ from datasets import (
 )
 
 RENAME_COLUMN_DICT = {
+    "cell_id": "cell_id",
     "cycle_idx": "cycle_idx",
     "time": "time",
     "voltage_per_time": "voltage_per_time",
@@ -35,7 +37,7 @@ def random_time_sampling(
     """
     Randomly sample time data from the batch.
     """
-    batch_ref = batch["ref"] # (cell_idx)
+    batch_cell_id = batch["cell_id"] # (cell_idx)
     batch_cycle_idx = batch["cycle_idx"] # (cell_idx, cycle_len)
     batch_discharge_capacity_per_cycle = batch["discharge_capacity_per_cycle"] # (cell_idx, cycle_len)
     batch_charge_time = batch["time"] # (cell_idx, cycle_len, time_len)
@@ -45,7 +47,7 @@ def random_time_sampling(
     ret = defaultdict(list)
     for _ in range(sampling_count):
         cycle_iterator = zip(
-            batch_ref,
+            batch_cell_id,
             batch_cycle_idx,
             batch_discharge_capacity_per_cycle,
             batch_charge_time,
@@ -53,7 +55,7 @@ def random_time_sampling(
             batch_charge_current_per_time,
         )
         for cycle_iter in cycle_iterator:
-            ref, cycle_i, cycle_dq = cycle_iter[:3]
+            cell_id, cycle_i, cycle_dq = cycle_iter[:3]
             time_iterator = zip(*cycle_iter[3:])
             cycle_len = len(cycle_i)
             time = numpy.zeros((cycle_len, random_time_len), dtype=numpy.float32)
@@ -76,7 +78,7 @@ def random_time_sampling(
                 voltage_per_time[time_iter_idx] = numpy.array([time_v[i] for i in random_idx], dtype=numpy.float32)
                 current_per_time[time_iter_idx] = numpy.array([time_i[i] for i in random_idx], dtype=numpy.float32)
 
-            ret["ref"].append(ref)
+            ret["cell_id"].append(cell_id)
             ret["cycle_idx"].append(cycle_i)
             ret["discharge_capacity_per_cycle"].append(cycle_dq)
             ret["time"].append(time)
@@ -99,7 +101,7 @@ def split_cycle(
     """
     Split the cycle data into chunks of length `split_cycle_len`.
     """
-    batch_ref = batch["ref"] # (cell_idx)
+    batch_cell_id = batch["cell_id"] # (cell_idx)
     batch_cycle_idx = batch["cycle_idx"] # (cell_idx, cycle_len)
     batch_discharge_capacity_per_cycle = batch["discharge_capacity_per_cycle"] # (cell_idx, cycle_len)
     batch_charge_time = batch["time"] # (cell_idx, cycle_len, time_len)
@@ -108,7 +110,7 @@ def split_cycle(
 
     ret = defaultdict(list)
     cycle_iterator = zip(
-        batch_ref,
+        batch_cell_id,
         batch_cycle_idx,
         batch_discharge_capacity_per_cycle,
         batch_charge_time,
@@ -117,7 +119,7 @@ def split_cycle(
     )
     for cycle_iter in cycle_iterator:
         (
-            ref,
+            cell_id,
             cycle_idx,
             cycle_dq,
             cycle_t,
@@ -216,7 +218,7 @@ def split_cycle(
                     trajectory_prediction_idx
                 ] / cycle_dq[chunk_idx[0]]
 
-            ret["ref"].append(ref)
+            ret["cell_id"].append(cell_id)
             ret["mask"].append(chunk_mask)
             ret["cycle_idx"].append(chunk_cycle_idx)
             ret["first_discharge_capacity"].append(cycle_dq[chunk_idx[0]])
@@ -229,12 +231,61 @@ def split_cycle(
     return dict(ret)
 
 # %%
+def interpolate_cycle_for_train(
+        ds: DatasetDict,
+        interpolate_soh_threshold: float = 0.005,
+        padding_value: float = -100.0,
+    ) -> DatasetDict:
+    def interpolate_cycle(data: Dict[str, numpy.ndarray]) -> Dict[str, numpy.ndarray]:
+        padding_mask = (data["label_state_of_health_per_cycle"] == padding_value)
+        cycle_idx = data["cycle_idx"].copy()
+        cycle_idx = cycle_idx[~padding_mask]
+        new_data: Dict[str, numpy.ndarray] = {}
+        interp_columns = [
+            "label_state_of_health_per_cycle",
+            "label_discharge_capacity_per_cycle",
+        ]
+        # get which positions to interpolate
+        state_of_health_interped = data["label_state_of_health_per_cycle"].copy()
+        state_of_health_interped = state_of_health_interped[~padding_mask]
+        interped_mask = numpy.zeros_like(state_of_health_interped, dtype=bool)
+        while True:
+            mask = numpy.zeros_like(state_of_health_interped, dtype=bool)
+            masked_pos = numpy.where(
+                numpy.abs(numpy.diff(state_of_health_interped)) >= interpolate_soh_threshold
+            )[0] + 1 # change next position when difference is larger than threshold
+            mask[masked_pos] = True
+            if ~mask.any():
+                break
+            interped_mask[masked_pos] = True
+            state_of_health_interped = interp1d(
+                cycle_idx[~mask],
+                state_of_health_interped[~mask],
+            )(cycle_idx)
+        # interpolate the columns
+        for column in interp_columns:
+            column_data = data[column].copy()
+            interped_data = interp1d(
+                cycle_idx[~interped_mask],
+                column_data[~padding_mask][~interped_mask],
+            )(cycle_idx)
+            column_data[~padding_mask] = interped_data
+            new_data[column] = column_data
+        return new_data
+
+    ds.set_format("numpy")
+    ds["train"] = ds["train"].map(interpolate_cycle)
+    return ds
+
+# %%
 def ds_preprocess_for_train(
         ds_name: str,
         model_purpose: Literal["next_cycle_prediction", "trajectory_prediction"],
         random_time_len: int,
         sampling_count: int,
         split_cycle_len: int,
+        interpolate_cycle: bool = True,
+        interpolate_soh_threshold: float = 0.5,
         padding_value: float = -100.0,
         padding_side: Literal["left", "right"] = "left",
         trajectory_pred_len: Optional[int] = None,
@@ -254,7 +305,7 @@ def ds_preprocess_for_train(
         desc="Random time sampling",
     )
     features = Features({
-        "ref": Value(dtype="string"),
+        "cell_id": Value(dtype="string"),
         "cycle_idx": Sequence(Value(dtype="int32")),
         "discharge_capacity_per_cycle": Sequence(Value(dtype="float32")),
         "time": Array2D(shape=(None, random_time_len), dtype="float32"),
@@ -284,7 +335,7 @@ def ds_preprocess_for_train(
         desc="Split cycle",
     )
     features = Features({
-        "ref": Value(dtype="string"),
+        "cell_id": Value(dtype="string"),
         "cycle_idx": Sequence(Value(dtype="int64")),
         "time": Array2D(shape=(split_cycle_len, random_time_len), dtype="float32"),
         "voltage_per_time": Array2D(shape=(split_cycle_len, random_time_len), dtype="float32"),
@@ -296,6 +347,14 @@ def ds_preprocess_for_train(
         "label_state_of_health_per_cycle": Sequence(Value(dtype="float32")),
     })
     ds = ds.cast(features)
+
+    if interpolate_cycle:
+        ds.set_format("numpy")
+        ds = interpolate_cycle_for_train(
+            ds,
+            interpolate_soh_threshold=interpolate_soh_threshold,
+            padding_value=padding_value
+        )
 
     ds = ds.rename_columns(RENAME_COLUMN_DICT)
     ds = ds.select_columns(list(RENAME_COLUMN_DICT.values()))
@@ -331,12 +390,12 @@ def ds_preprocess_for_eval(
     )
     eval_ds = {}
     for i, eval_d in enumerate(ds[eval_ds_column]):
-        eval_key = f"{eval_d['ref']}/{eval_ds_column}/{i}"
+        eval_key = f"{eval_ds_column}/{eval_d['cell_id']}"
         eval_d = {key: [value] for key, value in eval_d.items()}
         eval_ds[eval_key] = Dataset.from_dict(eval_d)
     eval_ds = DatasetDict(eval_ds)
     features = Features({
-        "ref": Value(dtype="string"),
+        "cell_id": Value(dtype="string"),
         "cycle_idx": Sequence(Value(dtype="int32")),
         "discharge_capacity_per_cycle": Sequence(Value(dtype="float32")),
         "time": Array2D(shape=(None, random_time_len), dtype="float32"),
@@ -366,7 +425,7 @@ def ds_preprocess_for_eval(
         desc="Split cycle",
     )
     features = Features({
-        "ref": Value(dtype="string"),
+        "cell_id": Value(dtype="string"),
         "cycle_idx": Sequence(Value(dtype="int64")),
         "time": Array2D(shape=(split_cycle_len, random_time_len), dtype="float32"),
         "voltage_per_time": Array2D(shape=(split_cycle_len, random_time_len), dtype="float32"),
