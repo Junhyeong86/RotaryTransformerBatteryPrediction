@@ -110,16 +110,20 @@ def evaluate(
     ) -> pandas.DataFrame:
 
     # the below imports are imported later to accelerate the script loading time
-    from robat.logger import get_logger
-    from robat.datasets.ds_preprocess import ds_preprocess_for_eval
-    from robat import models
-    from robat.training.trainer_base import SaveTopModelCallback
+    import torch
+
+    from accelerate import Accelerator
 
     from sklearn.metrics import (
         root_mean_squared_error,
         mean_absolute_error,
         r2_score,
     )
+
+    from robat.logger import get_logger
+    from robat.datasets.ds_preprocess import ds_preprocess_for_eval
+    from robat import models
+    from robat.training.trainer_base import SaveTopModelCallback
 
     logger = get_logger(
         level="INFO",
@@ -158,6 +162,7 @@ def evaluate(
         logger.info(f"evalulation dataset prepared for {eval_key}")
 
     eval_df = defaultdict(list)
+    accelerator = Accelerator()
     for model_dir, model_ckpt in every_saved_models.items():
         config = json.load(open(model_ckpt / "config.json"))
         metric_filepath = model_dir / f"{eval_ds_column}_metrics.json"
@@ -181,25 +186,29 @@ def evaluate(
                 model_ckpt,
                 config=models.RoBaTConfig(**config),
             )
+            model = accelerator.prepare(model)
             model.eval()
             logger.info(f"Loaded model on CPU from {model_ckpt}")
             logger.info(f"Model config: {config}")
 
-            logger.info(f"Evaluation is performed on CPU")
+            logger.info(f"Evaluation is performed on {accelerator.device}")
             progress_bar = tqdm(total=len(ds), desc=f"Evaluating {model_dir}")
             label_and_pred = defaultdict(list)
             for cell_id, data in ds.items():
                 progress_bar.set_postfix({"processing cell id": cell_id})
-                pred = model(
-                    first_discharge_capacity=data["first_discharge_capacity"],
-                    state_of_health=data["state_of_health"],
-                    time=data["time"],
-                    voltage_per_time=data["voltage_per_time"],
-                    current_per_time=data["current_per_time"],
-                    mask=data["mask"],
-                    label_discharge_capacity=data["label_discharge_capacity"],
-                    label_state_of_health=data["label_state_of_health"],
-                )
+                inp = {
+                    "first_discharge_capacity": data["first_discharge_capacity"],
+                    "state_of_health": data["state_of_health"],
+                    "time": data["time"],
+                    "voltage_per_time": data["voltage_per_time"],
+                    "current_per_time": data["current_per_time"],
+                    "mask": data["mask"],
+                    "label_discharge_capacity": data["label_discharge_capacity"],
+                    "label_state_of_health": data["label_state_of_health"],
+                }
+                inp = {k: v.to(accelerator.device) for k, v in inp.items()}
+                with torch.no_grad():
+                    pred = model(**inp)
                 mask = data["label_discharge_capacity"] == config["padding_value"]
                 pred_discharge_capacity = (
                     pred.discharge_capacity[~mask]
