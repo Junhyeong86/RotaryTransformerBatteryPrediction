@@ -35,9 +35,13 @@ def get_best_model_ckpt(
         (cfg.model.model_purpose == "trajectory_prediction") &
         (cfg.model.config.loss_column == "discharge_capacity")
     )
-    mask = eval_df["model.config"].apply(
+    model_mask = eval_df["model.config"].apply(
         lambda x: is_compatable_model_config(x, cfg.model.config, ode_layer_check=ode_layer_check)
     )
+    ds_mask = eval_df["training.ds.ref_filter_list"].apply(
+        lambda x: str(cfg.training.ds.ref_filter_list) == x
+    )
+    mask = model_mask & ds_mask
     eval_df = eval_df[mask].reset_index(drop=True)
     if eval_df.empty:
         raise ValueError("No best model found for the given configuration.")

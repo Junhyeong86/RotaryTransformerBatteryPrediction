@@ -82,5 +82,6 @@ def get_eval_df(log_dir: str) -> pandas.DataFrame:
                     eval_df[key].append(value)
                 eval_df["model.config"].append(str(cfg.model.config))
                 eval_df["model.model_purpose"].append(cfg.model.model_purpose)
+                eval_df["training.ds.ref_filter_list"].append(str(cfg.training.ds.ref_filter_list))
     eval_df = pandas.DataFrame(eval_df)
     return eval_df

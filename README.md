@@ -19,10 +19,11 @@ robat-train --multirun\
     training/lr_scheduler="polynominal"\
     training.trainer_args.num_train_steps=10000\
     training.optimizer.lr=5e-5\
+    training.ds.ref_filter_list='["MATR"]',null\
     model.config.loss_column="state_of_health"\
     model.config.time_transformer_num_layers=4\
     model.config.cycle_transformer_num_layers=8\
-    repeat=3
+    repeat=3\
 ```
 - **Further pre-train a RoBaT model with discharge capacity optimization**
 - No repeat is needed since the model is already trained with SOH optimization, repeat returns the same model

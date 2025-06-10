@@ -38,7 +38,7 @@ AVAILABLE_DS_COLUMNS = Literal[
 # %%
 def plot_label_vs_pred(
         ax: pyplot.Axes,
-        label_and_pred: Dict[str, List[numpy.ndarray]],
+        ref_label_and_pred: Dict[str, List[numpy.ndarray]],
         column: str,
     ):
     # Save results
@@ -46,20 +46,20 @@ def plot_label_vs_pred(
         numpy.floor(x.min() * 10) / 10,
         numpy.ceil(x.max() * 10) / 10
     )
-    label_and_pred = numpy.hstack([
-        label_and_pred[f"label_{column}"].reshape(-1, 1),
-        label_and_pred[f"pred_{column}"].reshape(-1, 1),
+    ref_label_and_pred = numpy.hstack([
+        ref_label_and_pred[f"label_{column}"].reshape(-1, 1),
+        ref_label_and_pred[f"pred_{column}"].reshape(-1, 1),
     ])
-    kde = gaussian_kde(label_and_pred.T)
+    kde = gaussian_kde(ref_label_and_pred.T)
     ax.scatter(
-        *label_and_pred.T,
-        c=kde(label_and_pred.T),
+        *ref_label_and_pred.T,
+        c=kde(ref_label_and_pred.T),
         s=1,
         alpha=0.5,
         cmap="viridis",
     )
-    xrange = get_xrange(label_and_pred[:, 0])
-    yrange = get_xrange(label_and_pred[:, 1])
+    xrange = get_xrange(ref_label_and_pred[:, 0])
+    yrange = get_xrange(ref_label_and_pred[:, 1])
     ax.plot(
         xrange,
         xrange,
@@ -166,7 +166,6 @@ def evaluate(
     for model_dir, model_ckpt in every_saved_models.items():
         config = json.load(open(model_ckpt / "config.json"))
         metric_filepath = model_dir / f"{eval_ds_column}_metrics.json"
-        fig_filepath = model_dir / f"{eval_ds_column}_label vs pred discharge capacity.png"
         ds_kwargs = get_eval_ds_kwargs(
             ds_name=ds_name,
             eval_ds_column=eval_ds_column,
@@ -193,8 +192,9 @@ def evaluate(
 
             logger.info(f"Evaluation is performed on {accelerator.device}")
             progress_bar = tqdm(total=len(ds), desc=f"Evaluating {model_dir}")
-            label_and_pred = defaultdict(list)
+            overall_label_and_pred = defaultdict(lambda: defaultdict(list))
             for cell_id, data in ds.items():
+                ref = cell_id.split("/")[0]
                 progress_bar.set_postfix({"processing cell id": cell_id})
                 inp = {
                     "first_discharge_capacity": data["first_discharge_capacity"],
@@ -222,43 +222,65 @@ def evaluate(
                     .cpu()
                     .numpy()
                 )
-                label_and_pred["cell_id"].append(cell_id)
-                label_and_pred["pred_discharge_capacity"].append(pred_discharge_capacity)
-                label_and_pred["label_discharge_capacity"].append(label_discharge_capacity)
+                overall_label_and_pred[ref]["cell_id"].append(cell_id)
+                overall_label_and_pred[ref]["pred_discharge_capacity"].append(pred_discharge_capacity)
+                overall_label_and_pred[ref]["label_discharge_capacity"].append(label_discharge_capacity)
                 progress_bar.update(1)
             progress_bar.close()
 
-            for key, value in label_and_pred.items():
-                label_and_pred[key] = numpy.hstack(value)
+            for ref, ref_label_and_pred in overall_label_and_pred.items():
+                for key, value in ref_label_and_pred.items():
+                    overall_label_and_pred[ref][key] = numpy.hstack(value)
 
             # Save results
             if save_fig:
                 fig, ax = pyplot.subplots(figsize=(8, 8))
-                ax = plot_label_vs_pred(
-                    ax=ax,
-                    label_and_pred=label_and_pred,
-                    column="discharge_capacity",
-                )
-                fig.savefig(fig_filepath, dpi=100, bbox_inches="tight")
-                pyplot.close(fig)
+                for ref, ref_label_and_pred in overall_label_and_pred.items():
+                    fig_filepath = model_dir / f"{ref}_{eval_ds_column}_label vs pred discharge capacity.png"
+                    ax = plot_label_vs_pred(
+                        ax=ax,
+                        ref_label_and_pred=ref_label_and_pred,
+                        column="discharge_capacity",
+                    )
+                    fig.savefig(fig_filepath, dpi=100, bbox_inches="tight")
+                    pyplot.close(fig)
 
-            # Calculate metrics
-            rmse = root_mean_squared_error(
-                y_true=label_and_pred["label_discharge_capacity"],
-                y_pred=label_and_pred["pred_discharge_capacity"]
+            metrics: Dict[str, Dict[str, float]] = {}
+            for ref, ref_label_and_pred in overall_label_and_pred.items():
+                # Calculate metrics
+                rmse = root_mean_squared_error(
+                    y_true=ref_label_and_pred["label_discharge_capacity"],
+                    y_pred=ref_label_and_pred["pred_discharge_capacity"]
+                )
+                mae = mean_absolute_error(
+                    y_true=ref_label_and_pred["label_discharge_capacity"],
+                    y_pred=ref_label_and_pred["pred_discharge_capacity"]
+                )
+                r2 = r2_score(
+                    y_true=ref_label_and_pred["label_discharge_capacity"],
+                    y_pred=ref_label_and_pred["pred_discharge_capacity"]
+                )
+                metrics[ref] ={
+                    "RMSE": rmse,
+                    "MAE": mae,
+                    "R2": r2,
+                }
+            overall_rmse = root_mean_squared_error(
+                y_true=numpy.hstack([v["label_discharge_capacity"] for v in overall_label_and_pred.values()]),
+                y_pred=numpy.hstack([v["pred_discharge_capacity"] for v in overall_label_and_pred.values()])
             )
-            mae = mean_absolute_error(
-                y_true=label_and_pred["label_discharge_capacity"],
-                y_pred=label_and_pred["pred_discharge_capacity"]
+            overall_mae = mean_absolute_error(
+                y_true=numpy.hstack([v["label_discharge_capacity"] for v in overall_label_and_pred.values()]),
+                y_pred=numpy.hstack([v["pred_discharge_capacity"] for v in overall_label_and_pred.values()])
             )
-            r2 = r2_score(
-                y_true=label_and_pred["label_discharge_capacity"],
-                y_pred=label_and_pred["pred_discharge_capacity"]
+            overall_r2 = r2_score(
+                y_true=numpy.hstack([v["label_discharge_capacity"] for v in overall_label_and_pred.values()]),
+                y_pred=numpy.hstack([v["pred_discharge_capacity"] for v in overall_label_and_pred.values()])
             )
-            metrics = {
-                "RMSE": rmse,
-                "MAE": mae,
-                "R2": r2,
+            metrics["overall"] = {
+                "RMSE": overall_rmse,
+                "MAE": overall_mae,
+                "R2": overall_r2,
             }
             with open(metric_filepath, "w") as f:
                 json.dump(metrics, f, indent=4)
@@ -267,8 +289,9 @@ def evaluate(
 
         # Save evaluation dataframe
         eval_df["model_dir"].append(str(model_dir))
-        for key, value in metrics.items():
-            eval_df[key].append(value)
+        for ref, ref_metrics in metrics.items():
+            for key, value in ref_metrics.items():
+                eval_df[f"{key}/{ref}"].append(value)
         for key, value in config.items():
             eval_df[key].append(value)
 
@@ -350,7 +373,6 @@ def main() -> None:
         save_eval_df=save_eval_df,
         log_filename=log_filename,
     )
-
 
 if __name__ == "__main__":
     main()
