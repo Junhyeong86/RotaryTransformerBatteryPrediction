@@ -1,15 +1,13 @@
 ## Install
 ```sh
-pip install uv # for fast installation
-uv pip install "robat @ git+https://github.com/Junhyeong86/RotaryTransformerBatteryPrediction.git"
+pip install "robat @ git+https://github.com/Junhyeong86/RotaryTransformerBatteryPrediction.git"
 ```
 
 ## Training your own RoBaT model
 ### Install
 To train your own RoBaT model, you need to install the `robat` package with `train` extra.
 ```sh
-pip install uv # for fast installation
-uv pip install "robat[train] @ git+https://github.com/Junhyeong86/RotaryTransformerBatteryPrediction.git"
+pip install "robat[train] @ git+https://github.com/Junhyeong86/RotaryTransformerBatteryPrediction.git"
 ```
 ### SOH Prediction Optimization
 - **Pre-train a RoBaT model with SOH optimization**
@@ -23,7 +21,7 @@ robat-train --multirun\
     model.config.loss_column="state_of_health"\
     model.config.time_transformer_num_layers=4\
     model.config.cycle_transformer_num_layers=8\
-    repeat=3\
+    repeat=3
 ```
 - **Further pre-train a RoBaT model with discharge capacity optimization**
 - No repeat is needed since the model is already trained with SOH optimization, repeat returns the same model
@@ -81,8 +79,7 @@ robat-train --multirun\
 ### Install
 To evaluate your own RoBaT model, you need to install the `robat` package with `train` extra.
 ```sh
-pip install uv # for fast installation
-uv pip install "robat[train] @ git+https://github.com/Junhyeong86/RotaryTransformerBatteryPrediction.git"
+pip install "robat[train] @ git+https://github.com/Junhyeong86/RotaryTransformerBatteryPrediction.git"
 ```
 ### Evaluation
 ```sh

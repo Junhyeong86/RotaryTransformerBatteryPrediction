@@ -25,7 +25,7 @@ dependencies = [
 [project.optional-dependencies]
 train = [
     "accelerate",
-    "datasets",
+    "datasets>=3.6.0",
     "torchinfo",
     "tensorboardX",
     "matplotlib",
