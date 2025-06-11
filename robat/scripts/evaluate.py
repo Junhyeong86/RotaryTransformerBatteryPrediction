@@ -19,14 +19,9 @@ import pandas
 from scipy.stats import gaussian_kde
 
 import matplotlib
-from matplotlib import pyplot
-
-from datasets import DatasetDict
-
-from omegaconf import OmegaConf
-
-# %%
 matplotlib.use("Agg")  # Use a non-interactive backend for matplotlib to accelerate the script
+
+from matplotlib import pyplot
 
 # %%
 AVAILABLE_DS_NAMES = Literal[
@@ -85,7 +80,7 @@ def get_eval_ds_kwargs(
         model_config: Dict
     ) -> Dict[str, str]:
     architecture = model_config["architectures"][0]
-    training_config = hydra_config["training"]["ds"]
+    training_config = hydra_config["training"]
     if architecture == "RoBaTForNextCyclePrediction":
         model_purpose = "next_cycle_prediction"
     elif architecture == "RoBaTForTrajectoryPrediction":
@@ -126,6 +121,9 @@ def evaluate(
         r2_score,
     )
 
+    from datasets import DatasetDict
+    from omegaconf import OmegaConf
+
     from robat.logger import get_logger
     from robat.datasets.ds_preprocess import ds_preprocess_for_eval
     from robat import models
@@ -158,7 +156,7 @@ def evaluate(
             ds_name=ds_name,
             eval_ds_column=eval_ds_column,
             split_cycle_len=split_cycle_len,
-            hydra_config=OmegaConf.load(model_dir / "config.yaml"),
+            hydra_config=OmegaConf.load(model_dir.parents[0] / "config.yaml"),
             model_config=json.load(open(model_ckpt / "config.json"))
         )
         eval_key = " ".join(f"{key}={value}" for key, value in ds_kwags.items())
@@ -177,7 +175,8 @@ def evaluate(
             ds_name=ds_name,
             eval_ds_column=eval_ds_column,
             split_cycle_len=split_cycle_len,
-            config=config
+            hydra_config=OmegaConf.load(model_dir.parents[0] / "config.yaml"),
+            model_config=config,
         )
         eval_key = " ".join(f"{key}={value}" for key, value in ds_kwargs.items())
         architecture = config.pop("architectures")[0]
@@ -244,6 +243,7 @@ def evaluate(
                 fig, ax = pyplot.subplots(figsize=(8, 8))
                 for ref, ref_label_and_pred in overall_label_and_pred.items():
                     fig_filepath = model_dir / f"{ref}_{eval_ds_column}_label vs pred discharge capacity.png"
+                    logger.info(f"Saving label vs pred figure : {fig_filepath}")
                     ax = plot_label_vs_pred(
                         ax=ax,
                         ref_label_and_pred=ref_label_and_pred,
@@ -339,16 +339,14 @@ def main() -> None:
         help="Length of the cycle to split the dataset. Default: 256.",
     )
     parser.add_argument(
-        "--save_fig",
-        action="store_true",
-        default=True,
-        help="Whether to save the label vs prediction figures. Default: True.",
+        "--no_save_fig",
+        action="store_false",
+        help="Disable to save the label vs prediction figures. Default: True.",
     )
     parser.add_argument(
-        "--save_eval_df",
-        action="store_true",
-        default=True,
-        help="Whether to save the evaluation results as a DataFrame. Default: True.",
+        "--no_save_eval_df",
+        action="store_false",
+        help="Disable to save the evaluation results as a DataFrame. Default: True.",
     )
     parser.add_argument(
         "--log_filename",
@@ -360,8 +358,8 @@ def main() -> None:
     eval_root_dir = Path(args.eval_root_dir)
     ds_name = args.ds_name
     split_cycle_len = args.split_cycle_len
-    save_fig = args.save_fig
-    save_eval_df = args.save_eval_df
+    save_fig = args.no_save_fig
+    save_eval_df = args.no_save_eval_df
     log_filename = args.log_filename
 
     if not eval_root_dir.is_dir():

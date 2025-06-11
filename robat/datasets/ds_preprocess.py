@@ -543,7 +543,7 @@ def ds_preprocess_for_eval(
     # create eval dataset
     eval_ds = {}
     for i, eval_d in enumerate(ds[eval_ds_column]):
-        eval_key = f"{eval_ds_column}/{eval_d['cell_id']}"
+        eval_key = f"{eval_d['ref']}/{eval_d['cell_id']}"
         eval_d = {key: [value] for key, value in eval_d.items()}
         eval_ds[eval_key] = Dataset.from_dict(eval_d)
     eval_ds = DatasetDict(eval_ds)
