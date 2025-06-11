@@ -24,7 +24,6 @@ robat-train --multirun\
     repeat=3
 ```
 - **Further pre-train a RoBaT model with discharge capacity optimization**
-- No repeat is needed since the model is already trained with SOH optimization, repeat returns the same model
 - To stabilize the training, we use a smaller learning rate than the SOH optimization.
 ```sh
 robat-train --multirun\
@@ -35,7 +34,6 @@ robat-train --multirun\
     model.config.cycle_transformer_num_layers=8\
     model.from_pretrained.from_pretrained=true\
     model.from_pretrained.pretrained_model_name_or_path="best"\
-    repeat=1 # since loading from best pretrained model, no need to repeat
 ```
 ### Trajectory Prediction Optimization
 - **Fine-tune a SOH optimized RoBaT model with trajectory prediction optimization.**
@@ -58,7 +56,6 @@ robat-train --multirun\
     repeat=3
 ```
 - **Further traing a trajectory prediction optimized RoBaT model with discharge capacity optimization**
-- No repeat is needed since the model is already trained with trajectory prediction optimization, repeat returns the same model
 - To stabilize the training, we use a smaller learning rate than the trajectory prediction optimization.
 ```sh
 robat-train --multirun\
@@ -72,7 +69,6 @@ robat-train --multirun\
     model.config.ode_func_num_layers=4\
     model.from_pretrained.from_pretrained=true\
     model.from_pretrained.pretrained_model_name_or_path="best"\
-    repeat=1 # since loading from best pretrained model, no need to repeat
 ```
 
 ## Evaluate your own RoBaT model
