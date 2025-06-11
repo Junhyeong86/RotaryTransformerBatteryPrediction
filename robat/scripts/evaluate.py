@@ -23,6 +23,8 @@ from matplotlib import pyplot
 
 from datasets import DatasetDict
 
+from omegaconf import OmegaConf
+
 # %%
 matplotlib.use("Agg")  # Use a non-interactive backend for matplotlib to accelerate the script
 
@@ -79,9 +81,11 @@ def get_eval_ds_kwargs(
         ds_name: str,
         eval_ds_column: AVAILABLE_DS_COLUMNS,
         split_cycle_len: int,
-        config: Dict
+        hydra_config: Dict,
+        model_config: Dict
     ) -> Dict[str, str]:
-    architecture = config["architectures"][0]
+    architecture = model_config["architectures"][0]
+    training_config = hydra_config["training"]["ds"]
     if architecture == "RoBaTForNextCyclePrediction":
         model_purpose = "next_cycle_prediction"
     elif architecture == "RoBaTForTrajectoryPrediction":
@@ -90,13 +94,15 @@ def get_eval_ds_kwargs(
         raise ValueError(f"Unsupported model architecture: {architecture}")
     return {
         "ds_name": ds_name,
-        "eval_ds_column": eval_ds_column,
         "model_purpose": model_purpose,
-        "random_time_len": config["random_time_len"],
+        "random_time_len": model_config["random_time_len"],
         "split_cycle_len": split_cycle_len,
-        "padding_value": config["padding_value"],
-        "padding_side": config["padding_side"],
-        "trajectory_pred_len": config["ode_prediction_len"],
+        "connect_time_threshold": training_config["ds"]["connect_time_threshold"],
+        "interpolate_soh_threshold": training_config["ds"]["interpolate_soh_threshold"],
+        "eval_ds_column": eval_ds_column,
+        "padding_value": model_config["padding_value"],
+        "padding_side": model_config["padding_side"],
+        "trajectory_pred_len": model_config["ode_prediction_len"],
     }
 
 def evaluate(
@@ -152,7 +158,8 @@ def evaluate(
             ds_name=ds_name,
             eval_ds_column=eval_ds_column,
             split_cycle_len=split_cycle_len,
-            config=json.load(open(model_ckpt / "config.json"))
+            hydra_config=OmegaConf.load(model_dir / "config.yaml"),
+            model_config=json.load(open(model_ckpt / "config.json"))
         )
         eval_key = " ".join(f"{key}={value}" for key, value in ds_kwags.items())
         if eval_key in every_eval_ds:
