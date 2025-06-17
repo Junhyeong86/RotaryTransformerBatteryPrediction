@@ -132,6 +132,7 @@ def interpolate_discharge_capacity_per_cycle(
     return ret
 
 # %%
+# %%
 def random_time_sampling(
         batch: Dict[str, List],
         random_time_len: int=128,
@@ -161,11 +162,18 @@ def random_time_sampling(
             batch_current_per_time,
         )
         for cell_iter in cell_iterator:
-            cell_ref, cell_id, cell_cycle_idx, cell_dq = cell_iter[:4]
-            cycle_iterator = zip(*cell_iter[-3:]) # (cycle_len, time_len)
+            (
+                cell_ref,
+                cell_id,
+                cell_cycle_idx,
+                cell_dq,
+                cell_time,
+                cell_voltage,
+                cell_current,
+            ) = cell_iter
 
             time_len_per_cycle = numpy.array([
-                len(time_t) for time_t, _, _ in cycle_iterator
+                len(time_t) for time_t in cell_iter[-3]
             ])
             cell_should_skip = (
                 (time_len_per_cycle < 2 * random_time_len).sum()
@@ -176,6 +184,11 @@ def random_time_sampling(
                     f"Cell {cell_id} has too short time length time_len_per_cycle.mean() {time_len_per_cycle.mean()} < 2 * random_time_len {2 * random_time_len}. "
                     "skipping this cell."
                 )
+            cycle_iterator = zip(
+                cell_time,
+                cell_voltage,
+                cell_current,
+            )
             cycle_len = len(cell_cycle_idx)
             time = numpy.zeros((cycle_len, random_time_len), dtype=numpy.float32)
             voltage_per_time = numpy.zeros((cycle_len, random_time_len), dtype=numpy.float32)
@@ -185,9 +198,11 @@ def random_time_sampling(
 
             for cycle_iter_idx, cycle_iter in enumerate(cycle_iterator):
                 time_t, time_v, time_i = cycle_iter
-                # time_dq: 0, time_t: (time_len, ), time_v: (time_len, ), time_i: (time_len, )
+                # time_t: (time_len, ), time_v: (time_len, ), time_i: (time_len, )
                 if len(time_t) < 2 * random_time_len:
-                    time_t, time_v, time_i = cycle_iter[cycle_iter_idx-1] # use previous cycle data if not enough data
+                    time_t = cell_time[cycle_iter_idx - 1]  # use previous cycle data
+                    time_v = cell_voltage[cycle_iter_idx - 1]
+                    time_i = cell_current[cycle_iter_idx - 1]
                     logger.info(
                         f"Cell {cell_id} cycle idx {cycle_iter_idx} has too short time length"
                         f" Changed to previous cycle data."
@@ -214,7 +229,6 @@ def random_time_sampling(
     assert len(ret["cycle_idx"]) == sampling_count * len(batch_cycle_idx), f"len(ret['cycle_idx']) {len(ret['cycle_idx'])} != sampling_count {sampling_count} * cell_len {len(batch_cycle_idx)}"
 
     return dict(ret)
-
 # %%
 def split_cycle(
         batch,

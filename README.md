@@ -17,7 +17,7 @@ robat-train --multirun\
     training/lr_scheduler="polynominal"\
     training.trainer_args.num_train_steps=10000\
     training.optimizer.lr=5e-5\
-    training.ds.ref_filter_list='["MATR"]',null\
+    training.ds.ref_filter_list=null\
     model.config.loss_column="state_of_health"\
     model.config.time_transformer_num_layers=4\
     model.config.cycle_transformer_num_layers=8\
@@ -29,6 +29,7 @@ robat-train --multirun\
 robat-train --multirun\
     training.trainer_args.num_train_steps=10000\
     training.optimizer.lr=1e-6\
+    training.ds.ref_filter_list=null\
     model.config.loss_column="discharge_capacity"\
     model.config.time_transformer_num_layers=4\
     model.config.cycle_transformer_num_layers=8\
@@ -42,8 +43,10 @@ robat-train --multirun\
 - Unlike the SOH further pre-training, this fine-tuning is done with repeat=3 to get the best model. Because there is no ode layers in the SOH optimized model, ode layers are randomly initialized which means repeat is needed to get the best model.
 ```sh
 robat-train --multirun\
+    training/lr_scheduler="polynominal"\
     training.trainer_args.num_train_steps=10000\
     training.optimizer.lr=5e-5\
+    training.ds.ref_filter_list=null\
     model="trajectory_prediction"\
     model.config.loss_column="state_of_health"\
     model.config.time_transformer_num_layers=4\
@@ -51,7 +54,7 @@ robat-train --multirun\
     model.config.ode_prediction_len=128\
     model.config.ode_func_num_layers=4\
     model.from_pretrained.from_pretrained=true\
-    model.from_pretrained.model_search_dir="./log/train/next_cycle_prediction"\
+    model.from_pretrained.model_search_dir="./log/next_cycle_prediction"\
     model.from_pretrained.pretrained_model_name_or_path="best"\
     repeat=3
 ```
@@ -61,6 +64,7 @@ robat-train --multirun\
 robat-train --multirun\
     training.trainer_args.num_train_steps=10000\
     training.optimizer.lr=1e-6\
+    training.ds.ref_filter_list=null\
     model="trajectory_prediction"\
     model.config.loss_column="discharge_capacity"\
     model.config.time_transformer_num_layers=4\
