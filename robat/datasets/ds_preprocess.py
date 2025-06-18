@@ -556,15 +556,6 @@ def ds_preprocess_for_eval(
     })
     ds = ds.cast(features)
 
-    # create eval dataset
-    eval_ds = {}
-    for i, eval_d in enumerate(ds[eval_ds_column]):
-        eval_key = f"{eval_d['ref']}/{eval_d['cell_id']}"
-        eval_d = {key: [value] for key, value in eval_d.items()}
-        eval_ds[eval_key] = Dataset.from_dict(eval_d)
-    eval_ds = DatasetDict(eval_ds)
-    eval_ds = eval_ds.cast(features)
-
     # split cycle
     split_cycle_kwargs = {
         "split_cycle_len": split_cycle_len,
@@ -577,11 +568,11 @@ def ds_preprocess_for_eval(
             "for_trajectory_pred": True,
             "trajectory_pred_len": trajectory_pred_len,
         })
-    eval_ds = eval_ds.map(
+    ds = ds.map(
         split_cycle,
         batched=True,
         batch_size=8,
-        remove_columns=eval_ds[eval_key].column_names,
+        remove_columns=ds[eval_ds_column].column_names,
         fn_kwargs=split_cycle_kwargs,
         desc="Split cycle",
     )
@@ -598,9 +589,16 @@ def ds_preprocess_for_eval(
         "label_discharge_capacity_per_cycle": Sequence(Value(dtype="float32")),
         "label_state_of_health_per_cycle": Sequence(Value(dtype="float32")),
     })
-    eval_ds = eval_ds.cast(features)
+    ds = ds.cast(features)
+    ds = ds.rename_columns(RENAME_COLUMN_DICT)
 
-    eval_ds = eval_ds.rename_columns(RENAME_COLUMN_DICT)
+    # create eval dataset
+    eval_ds = defaultdict(lambda : defaultdict(list))
+    for i, eval_d in enumerate(ds[eval_ds_column]):
+        eval_key = f"{eval_d['ref']}/{eval_d['cell_id']}"
+        eval_ds[eval_key] = {key: eval_ds[eval_key][key] + [value] for key, value in eval_d.items()}
+    eval_ds = {key: Dataset.from_dict(value) for key, value in eval_ds.items()}
+    eval_ds = DatasetDict(eval_ds)
 
     # set format
     eval_ds.set_format("torch")
