@@ -33,45 +33,6 @@ AVAILABLE_DS_COLUMNS = Literal[
 ]
 
 # %%
-def plot_label_vs_pred(
-        ax: pyplot.Axes,
-        ref_label_and_pred: Dict[str, List[numpy.ndarray]],
-        column: str,
-    ):
-    # Save results
-    get_xrange = lambda x: (
-        numpy.floor(x.min() * 10) / 10,
-        numpy.ceil(x.max() * 10) / 10
-    )
-    ref_label_and_pred = numpy.hstack([
-        ref_label_and_pred[f"label_{column}"].reshape(-1, 1),
-        ref_label_and_pred[f"pred_{column}"].reshape(-1, 1),
-    ])
-    kde = gaussian_kde(ref_label_and_pred.T)
-    ax.scatter(
-        *ref_label_and_pred.T,
-        c=kde(ref_label_and_pred.T),
-        s=1,
-        alpha=0.5,
-        cmap="viridis",
-    )
-    xrange = get_xrange(ref_label_and_pred[:, 0])
-    yrange = get_xrange(ref_label_and_pred[:, 1])
-    ax.plot(
-        xrange,
-        xrange,
-        color="red",
-        linestyle="--",
-        label="y=x",
-    )
-    ax.set_xlim(xrange)
-    ax.set_ylim(yrange)
-    ax.set_title(f"label vs pred \n {column}")
-    ax.set_xlabel("Ground truth (Ah)")
-    ax.set_ylabel("Prediction (Ah)")
-    return ax
-
-# %%
 def get_eval_ds_kwargs(
         ds_name: str,
         eval_ds_column: AVAILABLE_DS_COLUMNS,
@@ -104,7 +65,6 @@ def evaluate(
         eval_root_dir: Path,
         ds_name: AVAILABLE_DS_NAMES="Junhyeong86/battery-health-prediction",
         split_cycle_len: int=256,
-        save_fig: bool=True,
         save_eval_df: bool=True,
         log_filename: str=None,
         eval_ds_column: Literal["validation", "test"]="test",
@@ -216,18 +176,32 @@ def evaluate(
                 with torch.no_grad():
                     pred = model(**inp)
                 mask = data["label_discharge_capacity"] == config["padding_value"]
-                pred_discharge_capacity = (
-                    pred.discharge_capacity[~mask]
-                    .detach()
-                    .cpu()
-                    .numpy()
-                )
-                label_discharge_capacity = (
-                    data["label_discharge_capacity"][~mask]
-                    .detach()
-                    .cpu()
-                    .numpy()
-                )
+                if model.config.model_purpose == "next_cycle_prediction":
+                    pred_discharge_capacity = (
+                        pred.discharge_capacity[~mask]
+                        .detach()
+                        .cpu()
+                        .numpy()
+                    )
+                    label_discharge_capacity = (
+                        data["label_discharge_capacity"][~mask]
+                        .detach()
+                        .cpu()
+                        .numpy()
+                    )
+                elif model.config.model_purpose == "trajectory_prediction":
+                    pred_discharge_capacity = (
+                        pred.discharge_capacity
+                        .detach()
+                        .cpu()
+                        .numpy()
+                    ).reshape(-1, )
+                    label_discharge_capacity = (
+                        data["label_discharge_capacity"]
+                        .detach()
+                        .cpu()
+                        .numpy()
+                    ).reshape(-1, )
                 overall_label_and_pred[ref]["cell_id"].append(cell_id)
                 overall_label_and_pred[ref]["pred_discharge_capacity"].append(pred_discharge_capacity)
                 overall_label_and_pred[ref]["label_discharge_capacity"].append(label_discharge_capacity)
@@ -237,20 +211,6 @@ def evaluate(
             for ref, ref_label_and_pred in overall_label_and_pred.items():
                 for key, value in ref_label_and_pred.items():
                     overall_label_and_pred[ref][key] = numpy.hstack(value)
-
-            # Save results
-            if save_fig:
-                fig, ax = pyplot.subplots(figsize=(8, 8))
-                for ref, ref_label_and_pred in overall_label_and_pred.items():
-                    fig_filepath = model_dir / f"{ref}_{eval_ds_column}_label vs pred discharge capacity.png"
-                    logger.info(f"Saving label vs pred figure : {fig_filepath}")
-                    ax = plot_label_vs_pred(
-                        ax=ax,
-                        ref_label_and_pred=ref_label_and_pred,
-                        column="discharge_capacity",
-                    )
-                    fig.savefig(fig_filepath, dpi=100, bbox_inches="tight")
-                    pyplot.close(fig)
 
             metrics: Dict[str, Dict[str, float]] = {}
             for ref, ref_label_and_pred in overall_label_and_pred.items():
@@ -339,11 +299,6 @@ def main() -> None:
         help="Length of the cycle to split the dataset. Default: 256.",
     )
     parser.add_argument(
-        "--no_save_fig",
-        action="store_false",
-        help="Disable to save the label vs prediction figures. Default: True.",
-    )
-    parser.add_argument(
         "--no_save_eval_df",
         action="store_false",
         help="Disable to save the evaluation results as a DataFrame. Default: True.",
@@ -358,7 +313,6 @@ def main() -> None:
     eval_root_dir = Path(args.eval_root_dir)
     ds_name = args.ds_name
     split_cycle_len = args.split_cycle_len
-    save_fig = args.no_save_fig
     save_eval_df = args.no_save_eval_df
     log_filename = args.log_filename
 
@@ -374,7 +328,6 @@ def main() -> None:
         ds_name=ds_name,
         eval_ds_column=args.eval_ds_column,
         split_cycle_len=split_cycle_len,
-        save_fig=save_fig,
         save_eval_df=save_eval_df,
         log_filename=log_filename,
     )

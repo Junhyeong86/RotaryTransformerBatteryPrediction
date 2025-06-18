@@ -34,7 +34,8 @@ robat-train --multirun\
     model.config.time_transformer_num_layers=4\
     model.config.cycle_transformer_num_layers=8\
     model.from_pretrained.from_pretrained=true\
-    model.from_pretrained.pretrained_model_name_or_path="best"
+    model.from_pretrained.pretrained_model_name_or_path="best"\
+    repeat=3
 ```
 ### Trajectory Prediction Optimization
 - **Fine-tune a SOH optimized RoBaT model with trajectory prediction optimization.**
@@ -72,7 +73,8 @@ robat-train --multirun\
     model.config.ode_prediction_len=128\
     model.config.ode_func_num_layers=4\
     model.from_pretrained.from_pretrained=true\
-    model.from_pretrained.pretrained_model_name_or_path="best"
+    model.from_pretrained.pretrained_model_name_or_path="best"\
+    repeat=3
 ```
 
 ## Evaluate your own RoBaT model

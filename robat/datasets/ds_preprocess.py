@@ -132,7 +132,6 @@ def interpolate_discharge_capacity_per_cycle(
     return ret
 
 # %%
-# %%
 def random_time_sampling(
         batch: Dict[str, List],
         random_time_len: int=128,
@@ -229,6 +228,7 @@ def random_time_sampling(
     assert len(ret["cycle_idx"]) == sampling_count * len(batch_cycle_idx), f"len(ret['cycle_idx']) {len(ret['cycle_idx'])} != sampling_count {sampling_count} * cell_len {len(batch_cycle_idx)}"
 
     return dict(ret)
+
 # %%
 def split_cycle(
         batch,
@@ -505,6 +505,8 @@ def ds_preprocess_for_eval(
         padding_side: Literal["left", "right"] = "left",
         trajectory_pred_len: Optional[int] = None,
     ) -> DatasetDict:
+    if model_purpose == "trajectory_prediction" and trajectory_pred_len is None:
+        raise ValueError("trajectory_pred_len must be specified for trajectory prediction model purpose")
     ds = load_dataset(ds_name)
     ds.pop("train") # remove train dataset
     # connect discrete time
