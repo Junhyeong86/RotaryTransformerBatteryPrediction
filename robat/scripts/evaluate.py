@@ -130,12 +130,13 @@ def evaluate(
     accelerator = Accelerator()
     for model_dir, model_ckpt in every_saved_models.items():
         config = json.load(open(model_ckpt / "config.json"))
+        hydra_config = OmegaConf.load(model_dir.parents[0] / "config.yaml")
         metric_filepath = model_dir / f"{eval_ds_column}_metrics.json"
         ds_kwargs = get_eval_ds_kwargs(
             ds_name=ds_name,
             eval_ds_column=eval_ds_column,
             split_cycle_len=split_cycle_len,
-            hydra_config=OmegaConf.load(model_dir.parents[0] / "config.yaml"),
+            hydra_config=hydra_config,
             model_config=config,
         )
         eval_key = " ".join(f"{key}={value}" for key, value in ds_kwargs.items())
@@ -176,7 +177,7 @@ def evaluate(
                 with torch.no_grad():
                     pred = model(**inp)
                 mask = data["label_discharge_capacity"] == config["padding_value"]
-                if model.config.model_purpose == "next_cycle_prediction":
+                if hydra_config.model.model_purpose == "next_cycle_prediction":
                     pred_discharge_capacity = (
                         pred.discharge_capacity[~mask]
                         .detach()
@@ -189,7 +190,7 @@ def evaluate(
                         .cpu()
                         .numpy()
                     )
-                elif model.config.model_purpose == "trajectory_prediction":
+                elif hydra_config.model.model_purpose == "trajectory_prediction":
                     pred_discharge_capacity = (
                         pred.discharge_capacity
                         .detach()
