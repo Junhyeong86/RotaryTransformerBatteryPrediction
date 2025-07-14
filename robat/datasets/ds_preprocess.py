@@ -386,7 +386,7 @@ def ds_preprocess_for_train(
         padding_value: float = -100.0,
         padding_side: Literal["left", "right"] = "left",
         trajectory_pred_len: Optional[int] = None,
-        ref_filter_list: Optional[List[str]] = None,
+        refs_to_remove: Optional[List[str]] = None,
     ) -> DatasetDict:
     ds = load_dataset(ds_name)
     # connect discrete time
@@ -482,10 +482,11 @@ def ds_preprocess_for_train(
     ds = ds.rename_columns(RENAME_COLUMN_DICT)
     ds.set_format("torch")
 
-    if ref_filter_list is not None:
+    # remove ref
+    if refs_to_remove is not None:
         # filter by ref
         ds = ds.filter(
-            lambda x: x["ref"] in ref_filter_list,
+            lambda x: x["ref"] not in refs_to_remove,
             desc="Filter by ref",
         )
 

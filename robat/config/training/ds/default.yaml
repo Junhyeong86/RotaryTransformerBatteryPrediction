@@ -9,4 +9,4 @@ interpolate_soh_threshold: 0.005 # arbitrary value, 0.005 = 0.5%
 padding_value: ${model.config.padding_value}
 padding_side: ${model.config.padding_side}
 trajectory_pred_len: ${model.config.ode_prediction_len}
-ref_filter_list: ["MATR"]
+refs_to_remove: null
