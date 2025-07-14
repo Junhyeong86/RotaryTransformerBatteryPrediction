@@ -32,7 +32,7 @@ RENAME_COLUMN_DICT = {
 # %%
 def connect_discrete_time(
         batch: Dict[str, List],
-        time_threshold: float = 1,
+        time_threshold: float = 1, # units: minutes
     ):
     """
     Connect the discrete time data into a single time series.
@@ -388,6 +388,7 @@ def ds_preprocess_for_train(
         trajectory_pred_len: Optional[int] = None,
         refs_to_remove: Optional[List[str]] = None,
     ) -> DatasetDict:
+    logger = getLogger(__name__ + ".ds_preprocess_for_train")
     ds = load_dataset(ds_name)
     # connect discrete time
     if connect_time_threshold is not None:
@@ -400,6 +401,7 @@ def ds_preprocess_for_train(
             },
             desc="Connect discrete time",
         )
+        logger.info(f"Connected discrete time with threshold {connect_time_threshold} minutes")
     # interpolate discharge capacity per cycle
     if interpolate_soh_threshold is not None:
         # interpolate cycle
@@ -412,17 +414,18 @@ def ds_preprocess_for_train(
             },
             desc="Interpolate cycle",
         )
+        logger.info(f"Interpolated discharge capacity per cycle with threshold {interpolate_soh_threshold}")
 
     # random time sampling
     for key in ds.keys():
         if key == "train":
-            fn_kwargs = {
+            random_time_sampling_kwargs = {
                 "random_time_len": random_time_len,
                 "sampling_count": sampling_count,
             }
         else:
             # for eval, we sample only once
-            fn_kwargs = {
+            random_time_sampling_kwargs = {
                 "random_time_len": random_time_len,
                 "sampling_count": 1,
             }
@@ -431,8 +434,14 @@ def ds_preprocess_for_train(
             batched=True,
             batch_size=8,
             remove_columns=ds[key].column_names,
-            fn_kwargs=fn_kwargs,
+            fn_kwargs=random_time_sampling_kwargs,
             desc="Random time sampling",
+        )
+        random_time_sampling_kwargs_str = "\n".join(
+            f"{key}={value}" for key, value in random_time_sampling_kwargs.items()
+        )
+        logger.info(
+            f"Random time sampling for {key} dataset with\n{random_time_sampling_kwargs_str}."
         )
     features = Features({
         "ref": Value(dtype="string"),
@@ -465,6 +474,12 @@ def ds_preprocess_for_train(
         fn_kwargs=split_cycle_kwargs,
         desc="Split cycle",
     )
+    split_cycle_kwargs_str = "\n".join(
+        f"{key}={value}" for key, value in split_cycle_kwargs.items()
+    )
+    logger.info(
+        f"Split cycle with\n{split_cycle_kwargs_str}."
+    )
     features = Features({
         "ref": Value(dtype="string"),
         "cell_id": Value(dtype="string"),
@@ -485,10 +500,18 @@ def ds_preprocess_for_train(
     # remove ref
     if refs_to_remove is not None:
         # filter by ref
-        ds = ds.filter(
+        train_ds = ds.pop("train")
+        train_ds = train_ds.filter(
             lambda x: x["ref"] not in refs_to_remove,
             desc="Filter by ref",
         )
+        train_references = set(list(train_ds["ref"]))
+        logger.info(f"Train dataset references: {', '.join(train_references)}")
+        ds = DatasetDict({
+            "train": train_ds,
+            "validation": ds.pop("validation"),
+            "test": ds.pop("test"),
+        })
 
     # set format
     return ds
@@ -508,6 +531,7 @@ def ds_preprocess_for_eval(
     ) -> DatasetDict:
     if model_purpose == "trajectory_prediction" and trajectory_pred_len is None:
         raise ValueError("trajectory_pred_len must be specified for trajectory prediction model purpose")
+    logger = getLogger(__name__ + ".ds_preprocess_for_eval")
     ds = load_dataset(ds_name)
     ds.pop("train") # remove train dataset
     # connect discrete time
@@ -521,6 +545,7 @@ def ds_preprocess_for_eval(
             },
             desc="Connect discrete time",
         )
+        logger.info(f"Connected discrete time with threshold {connect_time_threshold} minutes")
     # interpolate discharge capacity per cycle
     if interpolate_soh_threshold is not None:
         # interpolate cycle
@@ -533,18 +558,26 @@ def ds_preprocess_for_eval(
             },
             desc="Interpolate cycle",
         )
+        logger.info(f"Interpolated discharge capacity per cycle with threshold {interpolate_soh_threshold}")
 
     # random time sampling
+    random_time_sampling_kwargs = {
+        "random_time_len": random_time_len,
+        "sampling_count": 1,  # for eval, we sample only once
+    }
     ds = ds.map(
         random_time_sampling,
         batched=True,
         batch_size=8,
         remove_columns=ds[eval_ds_column].column_names,
-        fn_kwargs={
-            "random_time_len": random_time_len,
-            "sampling_count": 1,  # for eval, we sample only once
-        },
+        fn_kwargs=random_time_sampling_kwargs,
         desc="Random time sampling",
+    )
+    random_time_sampling_kwargs_str = "\n".join(
+        f"{key}={value}" for key, value in random_time_sampling_kwargs.items()
+    )
+    logger.info(
+        f"Random time sampling for {eval_ds_column} dataset with\n{random_time_sampling_kwargs_str}."
     )
     features = Features({
         "ref": Value(dtype="string"),
@@ -576,6 +609,12 @@ def ds_preprocess_for_eval(
         remove_columns=ds[eval_ds_column].column_names,
         fn_kwargs=split_cycle_kwargs,
         desc="Split cycle",
+    )
+    split_cycle_kwargs_str = "\n".join(
+        f"{key}={value}" for key, value in split_cycle_kwargs.items()
+    )
+    logger.info(
+        f"Split cycle with\n{split_cycle_kwargs_str}."
     )
     features = Features({
         "ref": Value(dtype="string"),
