@@ -17,7 +17,7 @@ robat-train --multirun\
     training/lr_scheduler="polynominal"\
     training.trainer_args.num_train_steps=10000\
     training.optimizer.lr=5e-5\
-    training.ds.refs_to_remove=null\
+    training.ds.refs_to_remove="['KIER']"\
     model.config.loss_column="state_of_health"\
     model.config.time_transformer_num_layers=4\
     model.config.cycle_transformer_num_layers=8\
@@ -29,7 +29,7 @@ robat-train --multirun\
 robat-train --multirun\
     training.trainer_args.num_train_steps=10000\
     training.optimizer.lr=1e-6\
-    training.ds.refs_to_remove=null\
+    training.ds.refs_to_remove="['KIER']"\
     model.config.loss_column="discharge_capacity"\
     model.config.time_transformer_num_layers=4\
     model.config.cycle_transformer_num_layers=8\
@@ -47,7 +47,7 @@ robat-train --multirun\
     training/lr_scheduler="polynominal"\
     training.trainer_args.num_train_steps=10000\
     training.optimizer.lr=5e-5\
-    training.ds.refs_to_remove=null\
+    training.ds.refs_to_remove="['KIER']"\
     model="trajectory_prediction"\
     model.config.loss_column="state_of_health"\
     model.config.time_transformer_num_layers=4\
@@ -65,7 +65,7 @@ robat-train --multirun\
 robat-train --multirun\
     training.trainer_args.num_train_steps=10000\
     training.optimizer.lr=1e-6\
-    training.ds.refs_to_remove=null\
+    training.ds.refs_to_remove="['KIER']"\
     model="trajectory_prediction"\
     model.config.loss_column="discharge_capacity"\
     model.config.time_transformer_num_layers=4\
