@@ -279,7 +279,7 @@ def split_cycle(
         time_len = cell_time.shape[1]
         last_chunk_pos = (
             len(cell_cycle_idx) - 1
-            if not for_trajectory_pred # nex cycle from previous cycles
+            if not for_trajectory_pred # next cycle from previous cycles
             else len(cell_cycle_idx) - trajectory_pred_len
         )
         if last_chunk_pos <= 0:
@@ -372,7 +372,22 @@ def split_cycle(
             ret["time"].append(chunk_time)
             ret["voltage_per_time"].append(chunk_voltage)
             ret["current_per_time"].append(chunk_current)
-    return dict(ret)
+    if len(ret) == 0:
+        return {
+            "ref": [],
+            "cell_id": [],
+            "mask": [],
+            "cycle_idx": [],
+            "first_discharge_capacity": [],
+            "state_of_health_per_cycle": [],
+            "label_discharge_capacity_per_cycle": [],
+            "label_state_of_health_per_cycle": [],
+            "time": [],
+            "voltage_per_time": [],
+            "current_per_time": []
+        }
+    else:
+        return dict(ret)
 
 # %%
 def ds_preprocess_for_train(
