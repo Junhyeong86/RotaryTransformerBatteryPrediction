@@ -24,21 +24,12 @@ matplotlib.use("Agg")  # Use a non-interactive backend for matplotlib to acceler
 from matplotlib import pyplot
 
 # %%
-AVAILABLE_DS_NAMES = Literal[
-    "Junhyeong86/battery-health-prediction",
-]
-AVAILABLE_DS_COLUMNS = Literal[
-    "validation",
-    "test",
-]
-
-# %%
 def get_eval_ds_kwargs(
-        ds_name: str,
-        eval_ds_column: AVAILABLE_DS_COLUMNS,
-        split_cycle_len: int,
         hydra_config: Dict,
-        model_config: Dict
+        model_config: Dict,
+        ds_name: str="Junhyeong86/battery-health-prediction",
+        eval_ds_column: str="test",
+        split_cycle_len: int=256,
     ) -> Dict[str, str]:
     architecture = model_config["architectures"][0]
     training_config = hydra_config["training"]
@@ -63,7 +54,7 @@ def get_eval_ds_kwargs(
 
 def evaluate(
         eval_root_dir: Path,
-        ds_name: AVAILABLE_DS_NAMES="Junhyeong86/battery-health-prediction",
+        ds_name: str="Junhyeong86/battery-health-prediction",
         split_cycle_len: int=256,
         save_eval_df: bool=True,
         log_filename: str=None,
@@ -113,11 +104,11 @@ def evaluate(
     every_eval_ds: Dict[str, DatasetDict] = {} # pre-load datasets to avoid reloading
     for model_dir, model_ckpt in every_saved_models.items():
         ds_kwags = get_eval_ds_kwargs(
+            hydra_config=OmegaConf.load(model_dir.parents[0] / "config.yaml"),
+            model_config=json.load(open(model_ckpt / "config.json")),
             ds_name=ds_name,
             eval_ds_column=eval_ds_column,
             split_cycle_len=split_cycle_len,
-            hydra_config=OmegaConf.load(model_dir.parents[0] / "config.yaml"),
-            model_config=json.load(open(model_ckpt / "config.json"))
         )
         eval_key = " ".join(f"{key}={value}" for key, value in ds_kwags.items())
         if eval_key in every_eval_ds:
@@ -133,11 +124,11 @@ def evaluate(
         hydra_config = OmegaConf.load(model_dir.parents[0] / "config.yaml")
         metric_filepath = model_dir / f"{eval_ds_column}_metrics.json"
         ds_kwargs = get_eval_ds_kwargs(
+            hydra_config=hydra_config,
+            model_config=config,
             ds_name=ds_name,
             eval_ds_column=eval_ds_column,
             split_cycle_len=split_cycle_len,
-            hydra_config=hydra_config,
-            model_config=config,
         )
         eval_key = " ".join(f"{key}={value}" for key, value in ds_kwargs.items())
         architecture = config.pop("architectures")[0]
@@ -282,14 +273,12 @@ def main() -> None:
     parser.add_argument(
         "--ds_name",
         type=str,
-        choices=get_args(AVAILABLE_DS_NAMES),
         default="Junhyeong86/battery-health-prediction",
         help="Name of the dataset to use for evaluation. Default: Junhyeong86/battery-health-prediction",
     )
     parser.add_argument(
         "--eval_ds_column",
         type=str,
-        choices=get_args(AVAILABLE_DS_COLUMNS),
         default="test",
         help="Column of the dataset to use for evaluation. Default: test.",
     )
@@ -319,8 +308,6 @@ def main() -> None:
 
     if not eval_root_dir.is_dir():
         raise ValueError(f"Provided eval_root_dir {eval_root_dir} is not a directory.")
-    if ds_name not in get_args(AVAILABLE_DS_NAMES):
-        raise ValueError(f"Provided ds_name {ds_name} is not in the available dataset names: {get_args(AVAILABLE_DS_NAMES)}")
     if not eval_root_dir.exists():
         raise ValueError(f"Provided eval_root_dir {eval_root_dir} does not exist.")
 
