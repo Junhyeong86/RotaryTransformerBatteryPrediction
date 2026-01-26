@@ -8,6 +8,6 @@ per_device_eval_batch_size: 32
 gradient_accumulation_steps: 1
 mixed_precision: "no"
 # reporting
-report_to: tensorboard
+report_to: wandb
 metric_for_best_model: loss
 greater_is_better: false

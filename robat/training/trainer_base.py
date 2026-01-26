@@ -43,6 +43,7 @@ MIXED_PRECISION_TYPE = Literal[
 ]
 REPORT_TO_TYPE = Literal[
     "tensorboard",
+    "wandb"
 ]
 
 
@@ -57,7 +58,7 @@ class RoBaTTrainerArguments:
     per_device_eval_batch_size: int = 8
     gradient_accumulation_steps: int = 1
     mixed_precision: MIXED_PRECISION_TYPE = "fp16"
-    report_to: REPORT_TO_TYPE = "tensorboard"
+    report_to: REPORT_TO_TYPE = "wandb"
     metric_for_best_model: str = "loss"
     greater_is_better: bool = False
 
