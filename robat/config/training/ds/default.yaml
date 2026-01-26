@@ -1,5 +1,5 @@
 _target_: robat.datasets.ds_preprocess.ds_preprocess_for_train
-ds_name: Junhyeong86/battery-health-prediction
+ds_name: Inseop97/battery-health-prediction
 model_purpose: ${model.model_purpose}
 random_time_len: ${model.config.random_time_len}
 sampling_count: 16
