@@ -10,16 +10,11 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "" }
 authors = [
-    {name = "junhyeong lee", email = "jun686868@hanyang.ac.kr"},
-    {name = "insup kim", email = "kisdy0924@naver.com"}
+    { name = "junhyeong lee", email = "jun686868@hanyang.ac.kr" },
+    { name = "inseop kim", email = "kisdy0924@naver.com" },
 ]
 
-dependencies = [
-    "torch",
-    "transformers",
-    "hydra-core",
-    "torchdiffeq",
-]
+dependencies = ["torch", "transformers", "hydra-core", "torchdiffeq"]
 
 # TODO: Add optional dependencies if needed
 [project.optional-dependencies]
@@ -28,6 +23,7 @@ train = [
     "datasets>=3.6.0",
     "torchinfo",
     "tensorboardX",
+    "wandb",
     "matplotlib",
     "scipy",
     "scikit-learn",

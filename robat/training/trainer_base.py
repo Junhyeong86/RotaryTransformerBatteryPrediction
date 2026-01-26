@@ -312,6 +312,16 @@ class RoBaTTrainer:
             callbacks: List[RoBaTTrainerCallback] = None,
         ):
         self.trainer_args = trainer_args
+        try:
+            if self.trainer_args.report_to == "wandb":
+                import wandb
+            elif self.trainer_args.report_to == "tensorboard":
+                import tensorboardX
+            else:
+                raise ValueError(f"Unsupported report_to: {self.trainer_args.report_to}")
+        except ImportError:
+            raise ImportError(f"{self.trainer_args.report_to} is not installed. Please install it with `pip install {self.trainer_args.report_to}`")
+
         self.accelerator = Accelerator(
             mixed_precision=self.trainer_args.mixed_precision,
             gradient_accumulation_steps=self.trainer_args.gradient_accumulation_steps,

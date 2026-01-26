@@ -5,3 +5,4 @@ using_file_handler: true
 logger_names:
   - robat
   - transformers
+  - accelerate
