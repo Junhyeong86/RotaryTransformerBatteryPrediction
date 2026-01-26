@@ -155,28 +155,28 @@ def evaluate(
                 ref = cell_id.split("/")[0]
                 progress_bar.set_postfix({"processing cell id": cell_id})
                 inp = {
-                    "first_discharge_capacity": data["first_discharge_capacity"],
-                    "state_of_health": data["state_of_health"],
-                    "time": data["time"],
-                    "voltage_per_time": data["voltage_per_time"],
-                    "current_per_time": data["current_per_time"],
-                    "mask": data["mask"],
-                    "label_discharge_capacity": data["label_discharge_capacity"],
-                    "label_state_of_health": data["label_state_of_health"],
+                    "first_discharge_capacity": data["first_discharge_capacity"][:],
+                    "state_of_health": data["state_of_health"][:],
+                    "time": data["time"][:],
+                    "voltage_per_time": data["voltage_per_time"][:],
+                    "current_per_time": data["current_per_time"][:],
+                    "mask": data["mask"][:],
+                    "label_discharge_capacity": data["label_discharge_capacity"][:],
+                    "label_state_of_health": data["label_state_of_health"][:],
                 }
                 inp = {k: v.to(accelerator.device) for k, v in inp.items()}
                 with torch.no_grad():
                     pred = model(**inp)
-                mask = data["label_discharge_capacity"] == config["padding_value"]
+                mask = data["label_discharge_capacity"][:] == config["padding_value"]
                 if hydra_config.model.model_purpose == "next_cycle_prediction":
                     pred_discharge_capacity = (
-                        pred.discharge_capacity[~mask]
+                        pred.discharge_capacity[:][~mask]
                         .detach()
                         .cpu()
                         .numpy()
                     )
                     label_discharge_capacity = (
-                        data["label_discharge_capacity"][~mask]
+                        data["label_discharge_capacity"][:][~mask]
                         .detach()
                         .cpu()
                         .numpy()
@@ -189,7 +189,7 @@ def evaluate(
                         .numpy()
                     ).reshape(-1, )
                     label_discharge_capacity = (
-                        data["label_discharge_capacity"]
+                        data[:]["label_discharge_capacity"]
                         .detach()
                         .cpu()
                         .numpy()
