@@ -1,10 +1,9 @@
 # %%
-from typing import Optional, Literal
-from logging import (
-    getLogger,
-    Formatter,
-    FileHandler,
-    StreamHandler
+from typing import (
+    Optional,
+    Literal,
+    Dict,
+    Any
 )
 
 LOGGER_LEVELS = Literal[
@@ -15,35 +14,52 @@ LOGGER_LEVELS = Literal[
     "CRITICAL"
 ]
 
-# %%
-def get_logger(
+def generate_logging_config(
+        logger_name: str = "performance_reasoning",
         level: LOGGER_LEVELS = "INFO",
-        file_name: Optional[str]=None,
-        using_file_handler: bool=True,
-        using_stream_handler: bool=True,
-    ):
-    logger = getLogger(__name__.split(".")[0])  # Get the root logger
-    logger.propagate = False # to prevent double logging on stream handler
-    logger.setLevel(level)
-
-    if logger.hasHandlers():
-        # Clear existing handlers to avoid duplicate logs
-        logger.handlers.clear()
-
-    formatter = Formatter(
-        "[%(levelname)s] [%(asctime)s] [%(name)s]: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
-
+        using_stream_handler: bool = True,
+        using_file_handler: bool = True,
+        file_name: Optional[str] = None
+    ) -> Dict[str, Any]:
     if using_file_handler and file_name is None:
         raise ValueError("file_name must be provided if using_file_handler is True")
-    if using_file_handler:
-        file_handler = FileHandler(file_name)
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
 
+    handlers = {}
+    handler_names = []
     if using_stream_handler:
-        stream_handler = StreamHandler()
-        stream_handler.setFormatter(formatter)
-        logger.addHandler(stream_handler)
-    return logger
+        handlers["stream_handler"] = {
+            "class": "logging.StreamHandler",
+            "formatter": "default",
+            "stream": "ext://sys.stdout"
+        }
+        handler_names.append("stream_handler")
+
+    if using_file_handler:
+        handlers["file_handler"] = {
+            "class": "logging.FileHandler",
+            "formatter": "default",
+            "filename": file_name,
+            "mode": "a",
+            "encoding": "utf-8"
+        }
+        handler_names.append("file_handler")
+
+    config = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "default": {
+                "format": "[%(levelname)s] [%(asctime)s] [%(name)s]: %(message)s",
+                "datefmt": "%Y-%m-%d %H:%M:%S"
+            }
+        },
+        "handlers": handlers,
+        "loggers": {
+            logger_name: {
+                "level": level,
+                "handlers": handler_names,
+                "propagate": False
+            }
+        }
+    }
+    return config

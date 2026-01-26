@@ -11,7 +11,7 @@ from datetime import timedelta, datetime
 from collections import defaultdict
 from tqdm.autonotebook import tqdm
 from logging import getLogger
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import (
     Union,
     Literal,
@@ -323,7 +323,14 @@ class RoBaTTrainer:
             os.makedirs(self.trainer_args.output_dir)
 
         if self.accelerator.is_main_process:
-            self.accelerator.init_trackers("RoBaTTrainer")
+            config = {
+                **asdict(self.trainer_args),
+                **model.config.to_dict(),
+            }
+            self.accelerator.init_trackers(
+                "RoBaTTrainer",
+                config=config,
+            )
 
         model_kwargs = list(inspect.signature(model.forward).parameters.keys())
         if isinstance(train_dataloader, Dataset):

@@ -1,6 +1,7 @@
 # %%
 import os
 import time
+import logging
 from datetime import timedelta
 from typing import Tuple, List
 
@@ -12,8 +13,8 @@ from torch import nn
 
 from torchinfo import summary
 
-from robat.globals import MODELS_CONFIG_PATH
-from robat.logger import get_logger
+from robat.globals import HYDRA_CONFIG_DIRPATH
+from robat.logger import generate_logging_config
 from robat.training.compute_metrics_for_train import compute_metrics
 from robat.training.postprocess_for_train import get_eval_df, is_compatable_model_config
 from robat.training.trainer_base import (
@@ -56,7 +57,7 @@ def get_best_model_ckpt(
     return best_model_ckpt
 
 # %%
-@hydra.main(version_base=None, config_path=str(MODELS_CONFIG_PATH), config_name="default")
+@hydra.main(version_base=None, config_path=str(HYDRA_CONFIG_DIRPATH), config_name="default")
 def main(cfg: DictConfig) -> None:
     """
     Main function to run the training script.
@@ -69,6 +70,18 @@ def main(cfg: DictConfig) -> None:
     # Log the configuration
     OmegaConf.save(cfg, f"{hydra_output_dir}/config.yaml")
 
+    for logger_name in cfg.logging.logger_names:
+        logging_config = generate_logging_config(
+            logger_name=logger_name,
+            level=cfg.logging.level,
+            using_stream_handler=cfg.logging.using_stream_handler,
+            using_file_handler=cfg.logging.using_file_handler,
+            file_name=cfg.logging.file_name,
+        )
+        logging.config.dictConfig(logging_config)
+    logger = logging.getLogger("robat.scripts.train")
+    logger.info(f"Full Configuration:\n{OmegaConf.to_yaml(cfg)}")
+
     # get the best model checkpoint if needed
     # to avoid loading the best model during repeat training, call best_model outside the for loop
     cfg_from_pretrained = cfg.model.from_pretrained
@@ -76,15 +89,6 @@ def main(cfg: DictConfig) -> None:
         pretrained_model_name_or_path = get_best_model_ckpt(cfg)
     elif cfg_from_pretrained.from_pretrained and cfg_from_pretrained.pretrained_model_name_or_path != "best":
         pretrained_model_name_or_path = cfg_from_pretrained.pretrained_model_name_or_path
-
-    # call the logger
-    logger = get_logger(
-        level=cfg.logging.level,
-        file_name=f"{hydra_output_dir}/log.log",
-        using_file_handler=True,
-        using_stream_handler=True,
-    )
-    logger.info(OmegaConf.to_yaml(cfg))
 
     # initialize the dataset
     ds = instantiate(cfg.training.ds)

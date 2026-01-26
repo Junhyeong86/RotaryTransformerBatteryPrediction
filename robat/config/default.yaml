@@ -4,7 +4,6 @@ hydra:
   sweep:
     dir: "./log/${model.model_purpose}"
     subdir: "${now:%Y-%m-%d_%H-%M-%S_%f}"
-  job_logging: ${logging.job_logging}
 
 defaults:
   - _self_

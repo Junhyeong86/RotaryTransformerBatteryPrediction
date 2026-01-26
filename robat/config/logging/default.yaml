@@ -1,23 +1,7 @@
-file_name: "log.log"
+file_name: ${hydra:runtime.output_dir}/train.log
 level: INFO
-job_logging:
-  version: 1
-  formatters:
-    simple:
-      format: "[%(levelname)s] [%(asctime)s] [%(name)s]: %(message)s"
-      datefmt: "%Y-%m-%d %H:%M:%S"
-  handlers:
-    console:
-      class: logging.StreamHandler
-      formatter: simple
-      stream: ext://sys.stdout
-    file:
-      class: logging.FileHandler
-      formatter: simple
-      filename: "${hydra.runtime.output_dir}/${logging.file_name}"
-  root:
-    level: "${logging.level}"
-    handlers: 
-    - console
-    - file
-  disable_existing_loggers: false
+using_stream_handler: true
+using_file_handler: true
+logger_names:
+  - robat
+  - transformers
