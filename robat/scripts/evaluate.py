@@ -205,8 +205,8 @@ def evaluate(
                         .cpu()
                         .numpy()
                     ).reshape(-1, )
-                pred_soh = pred_discharge_capacity / pred_discharge_capacity[0]
-                label_soh = label_discharge_capacity / label_discharge_capacity[0]
+                pred_soh = pred_discharge_capacity / data["first_discharge_capacity"][0].item()
+                label_soh = label_discharge_capacity / data["first_discharge_capacity"][0].item()
                 overall_label_and_pred[ref]["cell_id"].append(cell_id)
                 overall_label_and_pred[ref]["pred_discharge_capacity"].append(pred_discharge_capacity)
                 overall_label_and_pred[ref]["label_discharge_capacity"].append(label_discharge_capacity)
