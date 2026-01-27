@@ -16,6 +16,7 @@ from typing import (
     Union,
     Literal,
     Optional,
+    Any,
     Dict,
     List,
     Callable
@@ -310,6 +311,7 @@ class RoBaTTrainer:
             eval_dataloader: Union[torch.utils.data.DataLoader, Dataset],
             compute_metrics: Callable[[RoBaTOutput], Dict[str, float]] = None,
             callbacks: List[RoBaTTrainerCallback] = None,
+            additional_tracker_config: Dict[str, Any] = None,
         ):
         self.trainer_args = trainer_args
         try:
@@ -337,6 +339,8 @@ class RoBaTTrainer:
                 **asdict(self.trainer_args),
                 **model.config.to_dict(),
             }
+            if additional_tracker_config is not None:
+                config.update(additional_tracker_config)
             self.accelerator.init_trackers(
                 "RoBaTTrainer",
                 config=config,

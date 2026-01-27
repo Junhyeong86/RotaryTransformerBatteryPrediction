@@ -2,6 +2,8 @@
 import os
 import re
 import json
+import logging
+import logging.config
 from argparse import ArgumentParser
 from collections import defaultdict
 from pathlib import Path
@@ -27,7 +29,7 @@ from matplotlib import pyplot
 def get_eval_ds_kwargs(
         hydra_config: Dict,
         model_config: Dict,
-        ds_name: str="Junhyeong86/battery-health-prediction",
+        ds_name: str="Inseop97/battery-health-prediction",
         eval_ds_column: str="test",
         split_cycle_len: int=256,
     ) -> Dict[str, str]:
@@ -54,9 +56,10 @@ def get_eval_ds_kwargs(
 
 def evaluate(
         eval_root_dir: Path,
-        ds_name: str="Junhyeong86/battery-health-prediction",
+        ds_name: str="Inseop97/battery-health-prediction",
         split_cycle_len: int=256,
         save_eval_df: bool=True,
+        log_level: str="INFO",
         log_filename: str=None,
         eval_ds_column: Literal["validation", "test"]="test",
     ) -> pandas.DataFrame:
@@ -75,17 +78,23 @@ def evaluate(
     from datasets import DatasetDict
     from omegaconf import OmegaConf
 
-    from robat.logger import get_logger
-    from robat.datasets.ds_preprocess import ds_preprocess_for_eval
     from robat import models
+    from robat.models import RoBaTConfig
+    from robat.logger import generate_logging_config
+    from robat.datasets.ds_preprocess import ds_preprocess_for_eval
     from robat.training.trainer_base import SaveTopModelCallback
 
-    logger = get_logger(
-        level="INFO",
-        file_name=log_filename,
-        using_file_handler=True if not log_filename is None else False,
-        using_stream_handler=True,
-    )
+    for logger_name in ["robat", "transformers", "accelerate"]:
+        logging_config = generate_logging_config(
+            logger_name=logger_name,
+            level="INFO",
+            file_name=log_filename,
+            using_file_handler=True if not log_filename is None else False,
+            using_stream_handler=True,
+        )
+        logging.config.dictConfig(logging_config)
+
+    logger = logging.getLogger("robat")
 
     every_saved_models: Dict[Path, Path] = {}
     for root, _, files in os.walk(eval_root_dir):
@@ -100,6 +109,8 @@ def evaluate(
     if not every_saved_models:
         raise ValueError(f"No saved models found in {eval_root_dir}")
     logger.info(f"Found {len(every_saved_models)} saved models in {eval_root_dir}")
+
+    every_saved_models = dict(sorted(every_saved_models.items()))
 
     every_eval_ds: Dict[str, DatasetDict] = {} # pre-load datasets to avoid reloading
     for model_dir, model_ckpt in every_saved_models.items():
@@ -141,7 +152,7 @@ def evaluate(
             ds = every_eval_ds[eval_key]
             model = getattr(models, architecture).from_pretrained(
                 model_ckpt,
-                config=models.RoBaTConfig(**config),
+                config=RoBaTConfig(**config),
             )
             model = accelerator.prepare(model)
             model.eval()
@@ -194,9 +205,13 @@ def evaluate(
                         .cpu()
                         .numpy()
                     ).reshape(-1, )
+                pred_soh = pred_discharge_capacity / pred_discharge_capacity[0]
+                label_soh = label_discharge_capacity / label_discharge_capacity[0]
                 overall_label_and_pred[ref]["cell_id"].append(cell_id)
                 overall_label_and_pred[ref]["pred_discharge_capacity"].append(pred_discharge_capacity)
                 overall_label_and_pred[ref]["label_discharge_capacity"].append(label_discharge_capacity)
+                overall_label_and_pred[ref]["pred_state_of_health"].append(pred_soh)
+                overall_label_and_pred[ref]["label_state_of_health"].append(label_soh)
                 progress_bar.update(1)
             progress_bar.close()
 
@@ -207,44 +222,82 @@ def evaluate(
             metrics: Dict[str, Dict[str, float]] = {}
             for ref, ref_label_and_pred in overall_label_and_pred.items():
                 # Calculate metrics
-                rmse = root_mean_squared_error(
+                dq_rmse = root_mean_squared_error(
                     y_true=ref_label_and_pred["label_discharge_capacity"],
                     y_pred=ref_label_and_pred["pred_discharge_capacity"]
                 )
-                mae = mean_absolute_error(
+                dq_mae = mean_absolute_error(
                     y_true=ref_label_and_pred["label_discharge_capacity"],
                     y_pred=ref_label_and_pred["pred_discharge_capacity"]
                 )
-                r2 = r2_score(
+                dq_r2 = r2_score(
                     y_true=ref_label_and_pred["label_discharge_capacity"],
                     y_pred=ref_label_and_pred["pred_discharge_capacity"]
                 )
                 metrics[ref] ={
-                    "RMSE": rmse,
-                    "MAE": mae,
-                    "R2": r2,
+                    "discharge_capacity RMSE (mAh)": dq_rmse * 1e3,
+                    "discharge_capacity MAE (mAh)": dq_mae * 1e3,
+                    "discharge_capacity R2 (%)": dq_r2 * 100,
                 }
-            overall_rmse = root_mean_squared_error(
+                soh_rmse = root_mean_squared_error(
+                    y_true=ref_label_and_pred["label_state_of_health"],
+                    y_pred=ref_label_and_pred["pred_state_of_health"]
+                )
+                soh_mae = mean_absolute_error(
+                    y_true=ref_label_and_pred["label_state_of_health"],
+                    y_pred=ref_label_and_pred["pred_state_of_health"]
+                )
+                soh_r2 = r2_score(
+                    y_true=ref_label_and_pred["label_state_of_health"],
+                    y_pred=ref_label_and_pred["pred_state_of_health"]
+                )
+                metrics[ref].update({
+                    "state_of_health RMSE (%)": soh_rmse * 100,
+                    "state_of_health MAE (%)": soh_mae * 100,
+                    "state_of_health R2 (%)": soh_r2 * 100,
+                })
+            overall_dq_rmse = root_mean_squared_error(
                 y_true=numpy.hstack([v["label_discharge_capacity"] for v in overall_label_and_pred.values()]),
                 y_pred=numpy.hstack([v["pred_discharge_capacity"] for v in overall_label_and_pred.values()])
             )
-            overall_mae = mean_absolute_error(
+            overall_dq_mae = mean_absolute_error(
                 y_true=numpy.hstack([v["label_discharge_capacity"] for v in overall_label_and_pred.values()]),
                 y_pred=numpy.hstack([v["pred_discharge_capacity"] for v in overall_label_and_pred.values()])
             )
-            overall_r2 = r2_score(
+            overall_dq_r2 = r2_score(
                 y_true=numpy.hstack([v["label_discharge_capacity"] for v in overall_label_and_pred.values()]),
                 y_pred=numpy.hstack([v["pred_discharge_capacity"] for v in overall_label_and_pred.values()])
+            )
+            overall_soh_rmse = root_mean_squared_error(
+                y_true=numpy.hstack([v["label_state_of_health"] for v in overall_label_and_pred.values()]),
+                y_pred=numpy.hstack([v["pred_state_of_health"] for v in overall_label_and_pred.values()])
+            )
+            overall_soh_mae = mean_absolute_error(
+                y_true=numpy.hstack([v["label_state_of_health"] for v in overall_label_and_pred.values()]),
+                y_pred=numpy.hstack([v["pred_state_of_health"] for v in overall_label_and_pred.values()])
+            )
+            overall_soh_r2 = r2_score(
+                y_true=numpy.hstack([v["label_state_of_health"] for v in overall_label_and_pred.values()]),
+                y_pred=numpy.hstack([v["pred_state_of_health"] for v in overall_label_and_pred.values()])
             )
             metrics["overall"] = {
-                "RMSE": overall_rmse,
-                "MAE": overall_mae,
-                "R2": overall_r2,
+                "discharge_capacity RMSE (mAh)": overall_dq_rmse * 1e3,
+                "discharge_capacity MAE (mAh)": overall_dq_mae * 1e3,
+                "discharge_capacity R2 (%)": overall_dq_r2 * 100,
+                "state_of_health RMSE (%)": overall_soh_rmse * 100,
+                "state_of_health MAE (%)": overall_soh_mae * 100,
+                "state_of_health R2 (%)": overall_soh_r2 * 100,
             }
+
             with open(metric_filepath, "w") as f:
                 json.dump(metrics, f, indent=4)
             logger.info(f"Metrics saved to {metric_filepath}")
-            logger.info(f"RMSE: {rmse}, MAE: {mae}, R2: {r2}")
+            logger.info(
+                f"Discharge Capacity RMSE: {overall_dq_rmse * 1e3} mAh, MAE: {overall_dq_mae * 1e3} mAh, R2: {overall_dq_r2 * 100} %"
+            )
+            logger.info(
+                f"State of Health RMSE: {overall_soh_rmse * 100} %, MAE: {overall_soh_mae * 100} %, R2: {overall_soh_r2 * 100} %"
+            )
 
         # Save evaluation dataframe
         eval_df["model_dir"].append(str(model_dir))
@@ -273,8 +326,8 @@ def main() -> None:
     parser.add_argument(
         "--ds_name",
         type=str,
-        default="Junhyeong86/battery-health-prediction",
-        help="Name of the dataset to use for evaluation. Default: Junhyeong86/battery-health-prediction",
+        default="Inseop97/battery-health-prediction",
+        help="Name of the dataset to use for evaluation. Default: Inseop97/battery-health-prediction",
     )
     parser.add_argument(
         "--eval_ds_column",
@@ -292,6 +345,13 @@ def main() -> None:
         "--no_save_eval_df",
         action="store_false",
         help="Disable to save the evaluation results as a DataFrame. Default: True.",
+    )
+    parser.add_argument(
+        "--log_level",
+        type=str,
+        default="info",
+        choices=["debug", "info", "warning", "error", "critical"],
+        help="Log level for the evaluation logs. Default: info.",
     )
     parser.add_argument(
         "--log_filename",
@@ -317,6 +377,7 @@ def main() -> None:
         eval_ds_column=args.eval_ds_column,
         split_cycle_len=split_cycle_len,
         save_eval_df=save_eval_df,
+        log_level=args.log_level.upper(),
         log_filename=log_filename,
     )
 

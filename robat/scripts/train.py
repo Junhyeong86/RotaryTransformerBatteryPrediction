@@ -2,6 +2,7 @@
 import os
 import time
 import logging
+import logging.config
 from datetime import timedelta
 from typing import Tuple, List
 
@@ -125,6 +126,7 @@ def main(cfg: DictConfig) -> None:
         # Create the Trainer instance
         callbacks = instantiate(cfg.training.callbacks)
         callbacks = [cb for name, cb in callbacks.items()]
+        additional_tracker_config = OmegaConf.to_container(cfg, resolve=True)
         trainer = RoBaTTrainer(
             trainer_args=trainer_args,
             model=model,
@@ -134,6 +136,7 @@ def main(cfg: DictConfig) -> None:
             eval_dataloader=ds["validation"],
             compute_metrics=compute_metrics,
             callbacks=callbacks,
+            additional_tracker_config=additional_tracker_config,
         )
 
         # summarize the model
