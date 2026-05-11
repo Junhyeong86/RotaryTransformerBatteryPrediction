@@ -56,17 +56,21 @@ class RotaryPositionEmbedding(nn.Module):
             dtype = torch.float32
 
         self.embedding_or_head_dim = embedding_or_head_dim
-        self.inverse_freq = 1.0 / (freq_base ** (torch.arange(0, embedding_or_head_dim, 2, dtype=dtype) / embedding_or_head_dim))
-        self.positions = torch.arange(max_sequence_len)
+        inverse_freq = 1.0 / (freq_base ** (torch.arange(0, embedding_or_head_dim, 2, dtype=dtype) / embedding_or_head_dim))
+        positions = torch.arange(max_sequence_len)
 
-        self.inverse_freq = self.inverse_freq.unsqueeze(0) # (1, embedding_or_head_dim // 2)
-        self.positions = self.positions.unsqueeze(1) # (max_sequence_len, 1)
+        inverse_freq = inverse_freq.unsqueeze(0) # (1, embedding_or_head_dim // 2)
+        positions = positions.unsqueeze(1) # (max_sequence_len, 1)
 
-        self.angles = self.inverse_freq * self.positions # (max_sequence_len, embedding_dim // 2)
-        self.angles = self.angles.repeat_interleave(2, dim=1) # (max_sequence_len, embedding_dim)
+        angles = inverse_freq * positions # (max_sequence_len, embedding_dim // 2)
+        angles = angles.repeat_interleave(2, dim=1) # (max_sequence_len, embedding_dim)
 
-        self.cos = torch.cos(self.angles) # (max_sequence_len, embedding_dim)
-        self.sin = torch.sin(self.angles) # (max_sequence_len, embedding_dim)
+        cos = torch.cos(angles) # (max_sequence_len, embedding_dim)
+        sin = torch.sin(angles) # (max_sequence_len, embedding_dim)
+
+        self.register_buffer("cos", cos, persistent=False)
+        self.register_buffer("sin", sin, persistent=False)
+        self.register_buffer("positions", positions, persistent=False)
 
         self.logger = getLogger(__name__ + "." + __class__.__name__)
 
@@ -88,8 +92,6 @@ class RotaryPositionEmbedding(nn.Module):
             f"RotaryPositionEmbedding forward called with:\n"
             f"  x shape: {x.shape}\n"
         )
-        self.cos = self.cos.to(x.device)
-        self.sin = self.sin.to(x.device)
 
         if x.dim() == 4:
             batch_size, num_heads, seq_len, _ = x.shape
@@ -466,7 +468,7 @@ class MultiTimeAttention(nn.Module):
         self.ref_seq_len = ref_seq_len
         self.dropout = dropout
 
-        self.ref_query_seq = torch.arange(self.ref_seq_len)
+        self.register_buffer("ref_query_seq", torch.arange(self.ref_seq_len), persistent=False)
         self.ref_query_embedding = nn.Embedding(self.ref_seq_len, self.embedding_dim)
         self.key_fc = nn.Linear(self.key_dim, self.embedding_dim)
         self.value_fc = nn.Linear(self.value_dim, self.embedding_dim)
@@ -516,7 +518,6 @@ class MultiTimeAttention(nn.Module):
         # shape_mismatch(key_seq, (batch_size, seq_len, self.key_dim))
         # shape_mismatch(value_seq, (batch_size, seq_len, self.value_dim))
 
-        self.ref_query_seq = self.ref_query_seq.to(key_seq.device)
         ref_query = self.ref_query_embedding(self.ref_query_seq)
         ref_query = (
             ref_query
